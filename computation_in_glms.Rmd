@@ -108,19 +108,19 @@ turned_out ~ binomial_logit(M, intercept + slope * male);
 1. There is an `intercept` and `slope` weren't part of the regression version
 of the problem.
 
-Traditionaly R regression syntax does not define the parameters. They are
+    Traditionaly R regression syntax does not define the parameters. They are
 implicitly defined by what covariates are included on the right hand side.
 
-`male` is a covariate, and so it gets a coefficient. If the intercept is not
+    `male` is a covariate, and so it gets a coefficient. If the intercept is not
 specified, it is assumed to be there.
 
-```turned_out ~ 1 + male``` is a verbose way to say include the intercept.
+    ```turned_out ~ 1 + male``` is a verbose way to say include the intercept.
 
-```turned_out ~ -1 + male``` is a way of saying do not include the intercept.
+    ```turned_out ~ -1 + male``` is a way of saying do not include the intercept.
 
 2. This is a vectorized statement. It is equivalent to:
 
-```
+    ```
 for(n in 1:N) {
   turned_out[n] ~ binomial_logit(M[n], intercept + slope * male[n]);
 }
@@ -132,17 +132,17 @@ because they are hidden behind `~` syntactic sugar. The log density is
 actually called `target` in Stan, and the previous loop is equivalent
 up to a constant of proportionality to:
 
-```
+    ```
 for(n in 1:N) {
   target += binomial_logit(turned_out[n] | M[n], intercept + slope * male[n]);
 }
 ```
 
-"up to a constant of proportionality" means that for the sake of sampling,
+    "up to a constant of proportionality" means that for the sake of sampling,
 they are the same, but in Stan the `~` operation actually drops some
 unnecessary calculations.
 
-A Stan model is a Bayesian log density. This means it is a function mapping
+    A Stan model is a Bayesian log density. This means it is a function mapping
 `P` parameters to a scalar output (the log density). This is why we do
 reverse mode autodiff -- it is most efficient when there is only one output
 but many inputs.
@@ -153,27 +153,27 @@ unconstrained. `male` is either -0.5 (female) or 0.5 (male), but `slope`
 and `intercept can be anything, and so can the total. To map this
 unconstrained value to a constrained value, we use the inverse logit function.
 
-For convenience, here is a reminder plot of inverse logit:
+    For convenience, here is a reminder plot of inverse logit:
 ```{r}
 inv_logit = function(x) { 1 / (1 + exp(-x)) }
 curve(inv_logit, -5, 5)
 ```
 
-`binomial_logit(N, x)` is the same as `binomial(N, inv_logit(x))`, but the
+    `binomial_logit(N, x)` is the same as `binomial(N, inv_logit(x))`, but the
 numerics are more stable for the first so we use that.
 
-We use `inv_logit` for convenience. Something else, or a low precision
+    We use `inv_logit` for convenience. Something else, or a low precision
 approximation, would probably be fine.
 
 5. The largest pieces of data do not change from model evaluation to model
 evaluation. What changes are the parameters.
 
-This means the length `N` array of integers `M` does not change, the length
+    This means the length `N` array of integers `M` does not change, the length
 `N` array of responses do not change, and the length `N` covariate `male` does
 not change. This means these things can be communicated once to every device
 involved in the computation and never need sent again.
 
-If we look at the likelihood calculation as a whole, even though it is the
+    If we look at the likelihood calculation as a whole, even though it is the
 majority of the work, only two doubles (`intercept` and `slope`) need shipped
 to the accerator during the forward pass and one double (`target`) returned.
 On the backwards pass, two doubles (the adjoints of `intercept` and `slope`)
@@ -195,7 +195,7 @@ an additional parameter `slope2` to go along with this. Something like:
 turned_out ~ binomial_logit(M, intercept + slope1 * male + slope2 * income);
 ```
 
-We can join the two vectors `male` and `income` into a single matrix `X`, and
+    We can join the two vectors `male` and `income` into a single matrix `X`, and
 then combine `slope1` and `slope2` into a single vector `beta`, and the
 regression now looks like:
 
@@ -203,23 +203,25 @@ regression now looks like:
 turned_out ~ binomial_logit(M, intercept + X * beta);
 ```
 
-where `X` is an `N` by `K` design matrix of covariates and `beta` is a length
+    where `X` is an `N` by `K` design matrix of covariates and `beta` is a length
 `K` vector of parameters. Usually the non-hierarchical/population level terms
 are though of computationally as a matrix-vector multiply for this reason.
 
 2. We can change the likelihood to something else. There are a lot of options.
 
-We might have a normal:
-```
+    We might have a normal:
+    
+    ```
 y ~ normal(intercept + X * beta, sigma);
 ```
 
-We might have a negative binomial:
-```
+    We might have a negative binomial:
+    
+    ```
 y ~ neg_binomial_2_log(intercept + X * beta, phi);
 ```
 
-There are many more families supported in `brms`, which is probably a good
+    There are many more families supported in `brms`, which is probably a good
 reference on the things we should be concerned about implementing:
 https://cran.r-project.org/web/packages/brms/vignettes/brms_families.html
 
@@ -231,7 +233,7 @@ at all. All four terms could be approximated.
 4. We can have multiple linear models in one likelihood. For instance, we
 might predict both the mean and standard deviation of a normal distribution:
 
-```
+    ```
 y ~ normal(intercept0 + X0 * beta0, exp(intercept1 + X1 * beta1));
 ```
 
@@ -295,57 +297,59 @@ Alright great, it fit. What did we learn?
 this is unsurprising, after all, it is a linear model we are evaluating.
 However the resemblance is not superficial.
 
-The vectorized code in our Stan model was:
+    The vectorized code in our Stan model was:
 
-```
+    ```
 turned_out ~ binomial_logit(M, intercept + slope * male + states[state_idx]);
 ```
 
-The term `states[state_idx]` expands to:
-```
+    The term `states[state_idx]` expands to:
+
+    ```
 vector[N] output; // = states[state_idx]
 for(n in N) {
   output[n] = states[state_idx[n]];
 }
 ```
 
-So this means for the nth response, take the `state_idx[n]` th element of the
+    So this means for the nth response, take the `state_idx[n]` th element of the
 vector `states`.
 
-We could construct a matrix `Z` that was `N` rows by `S` columns
+    We could construct a matrix `Z` that was `N` rows by `S` columns
 (there are `S` states) such that on the nth row the only nonzero was a one
 in the `state_idx[n]` th column. With this matrix,
 `states[state_idx] == Z * states`.
 
-The relationship is even closer if we look at a compressed-sparse-row
+    The relationship is even closer if we look at a compressed-sparse-row
 format for the sparse matrix.
 
-So if `state_idx` and `states` are defined like this:
+    So if `state_idx` and `states` are defined like this:
 
-```
+    ```
 state_idx = { 1, 2, 2, 4, ... }
 states = [ 1.1, 2.2, 3.3, 4.4, ... ]
 ```
 
-The matrix `Z` looks like:
-```
+    The matrix `Z` looks like:
+
+    ```
 [ 1, 0, 0, 0, ..., 0,
   0, 1, 0, 0, ..., 0,
   0, 1, 0, 0, ..., 0,
   0, 0, 0, 1, ..., 0 ]
 ```
 
-And then the CSR format (using the notation of
+    And then the CSR format (using the notation of
 [Wikipedia](https://en.wikipedia.org/w/index.php?title=Sparse_matrix#Compressed_sparse_row_(CSR,_CRS_or_Yale_format))
 looks like:
 
-```
+    ```
 V         = { 1.0, 1.0, 1.0, 1.0, ... }
 COL_INDEX = { 1, 2, 2, 4, ... }
 ROW_INDEX = [ 1, 2, 3, 4, ... ]
 ```
 
-So the values are all ones since the values of the matrix are ones, the row
+    So the values are all ones since the values of the matrix are ones, the row
 index variable is extraneous since effectively there is only one non-zero in
 every row, and `COL_INDEX` is the same as `state_idx`.
 
@@ -353,9 +357,9 @@ every row, and `COL_INDEX` is the same as `state_idx`.
 `S = 51` so that is 51 extra paramaters that need sent to the likelihood at
 every evaluation and 51 adjoints that need sent back in the reverse pass.
 
-For every group, we added two hyperparameters, `states_mean` and `states_sd`.
+    For every group, we added two hyperparameters, `states_mean` and `states_sd`.
 
-Evaluating the prior is not nearly as expensive as the likelihood in GLMs, and
+    Evaluating the prior is not nearly as expensive as the likelihood in GLMs, and
 this is not something that would need accelerated, so these add nothing to the
 complexity for the accelerator.
 
@@ -363,13 +367,13 @@ complexity for the accelerator.
 
 4. The for loop version of this is actually pretty readable:
 
-```
+    ```
 for(n in 1:N) {
   turned_out[n] ~ binomial_logit(M[n], intercept + slope * male[n] + states[state_idx[n]]);
 }
 ```
 
-Nothing much to say, other than that's what it looks like. It is not dissimilar
+    Nothing much to say, other than that's what it looks like. It is not dissimilar
 from the indexing you'd find in a statistics paper.
 
 Alright, now it is time to describe the last variation on hierarchical
@@ -407,15 +411,15 @@ Alright great, it ran hopefully it converged to something.
 1. This can again be written as a sparse matrix multiply, but now the `Z`
 matrix has values that are not just ones.
 
-If `state_idx`, `states_slopes`, and `male` are defined like this:
+    If `state_idx`, `states_slopes`, and `male` are defined like this:
 
-```
+    ```
 state_idx = { 1, 2, 2, 4, ... }
 states = [ 1.1, 2.2, 3.3, 4.4, ... ]
 male = [-0.5, 0.5, 0.5, -0.5, ... ]
 ```
 
-The matrix `Z` looks like:
+    The matrix `Z` looks like:
 ```
 [ -0.5,    0,    0,    0, ...,    0,
      0,  0.5,    0,    0, ...,    0,
@@ -423,11 +427,11 @@ The matrix `Z` looks like:
      0,    0,    0, -0.5, ...,    0 ]
 ```
 
-And then the CSR format (using the notation of
+    And then the CSR format (using the notation of
 [Wikipedia](https://en.wikipedia.org/w/index.php?title=Sparse_matrix#Compressed_sparse_row_(CSR,_CRS_or_Yale_format))
 looks like:
 
-```
+    ```
 V         = { -0.5, 0.5, 0.5, -0.5, ... }
 COL_INDEX = { 1, 2, 2, 4, ... }
 ROW_INDEX = [ 1, 2, 3, 4, ... ]
@@ -508,7 +512,7 @@ turned_out ~ binom(M, intercept + X * beta + Z * gamma)
 covariates, and `Z` is a sparse matrix of size `N` by `L` for `L` hierarchical
 terms.
 
-In this case `N` is 7851, `K` is 1, and `L` is about 233. You can compute `L`
+    In this case `N` is 7851, `K` is 1, and `L` is about 233. You can compute `L`
 by knowing how many members of each group there are and looking at the
 hierarchical terms. Here there are 51 states, 4 race categories,
 5 education levels, 4 age groups, and 3 marital statuses.
@@ -531,7 +535,7 @@ number of parameters to grow as the data grows. The philosophy is if you have
 more data, you know more about your problem, and you should do more to model
 it.
 
-I think realistically `N` and `L` are the parameters that scale though. I do
+    I think realistically `N` and `L` are the parameters that scale though. I do
 not expect `K` to scale in the same way. I'm making this argument because
 the dense matrix vector terms usually correspond to population level things.
 As you add more data, you add complexity in the groupings, and so that is where
@@ -539,49 +543,49 @@ I expect the model to get more complicated. The population itself will probably
 remain relatively small. I may regret saying this but I want to emphasize the
 importance of the sparse matrix vector term.
 
-The bleeding edge of Stan models fit now would be `N` around a million and
+    The bleeding edge of Stan models fit now would be `N` around a million and
 `L` in the upper tens of thousands.
 
 5. matrix-vector multiplies are always memory bound be they sparse or dense.
 
-The only way to make this more efficient (other than getting faster memory) is
+    The only way to make this more efficient (other than getting faster memory) is
 to switch the matrix-vector multiply into a matrix matrix multiply.
 
-Any time we do MCMC we need to run multiple chains. Every chain has the same
+    Any time we do MCMC we need to run multiple chains. Every chain has the same
 data but different parameters. Assume we are effectively evaluating:
 
-```
+    ```
 turned_out ~ binomial(M, intercept1 + X * beta1 + Z * gamma1)
 turned_out ~ binomial(M, intercept2 + X * beta2 + Z * gamma2)
 turned_out ~ binomial(M, intercept3 + X * beta3 + Z * gamma3)
 turned_out ~ binomial(M, intercept4 + X * beta4 + Z * gamma4)
 ```
 
-By sticking the `beta` and `gamma` vectors together, we can compute these
+    By sticking the `beta` and `gamma` vectors together, we can compute these
 likelihoods together as matrix matrix products. That is first compute:
 
-```
+    ```
 X * [beta1, beta2, beta3, beta4] + Z * [gamma1, gamma2, gamma3, gamma4]
 ```
 
-in a combined way and then redistribute the values to their separate chains.
+    in a combined way and then redistribute the values to their separate chains.
 
 5. I'm going to make some really big assumptions here to give you some idea
 of the ideal timings on all these calculations.
 
-The default algorithm in Stan is a variant of HMC. If it is operating
+    The default algorithm in Stan is a variant of HMC. If it is operating
 fairly efficiently, then we probably need somewhere between a thousand and
 two thousand draws (Stan's default is 2000) in a few chains (Stan's default
 is four). For each HMC draw we probably need somewhere between 100 to 300
 gradient evaluations (Stan defaults to 1 to 1023).
 
-To iterate very quickly on a model, it would be nice to do a full inference
+    To iterate very quickly on a model, it would be nice to do a full inference
 in a couple minutes. Ten is fine. Once models take thirty minutes or an hour
 or ten hours, they start to change workflow in an undesirable way. Obviously
 there will always be calculations that take hours, but it would be nice if we
 really moved the need on what is possible in a few minutes.
 
-So if we need to evaluate 200 * 2000 gradients in 120 seconds, that implies
+    So if we need to evaluate 200 * 2000 gradients in 120 seconds, that implies
 300 microseconds per gradient evaluation if the accelerator is serving one
 chain. Again, the I/O requirements are `O(K + L)` doubles in on the forward
 pass and the same number of doubles out on the backward pass.

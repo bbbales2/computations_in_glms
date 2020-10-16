@@ -377,7 +377,7 @@ summary {
 </div>
 <div id="motivating-a-regression" class="section level2">
 <h2>Motivating a regression</h2>
-<p>The data we will be looking at is turnout data in the 2016 election. It’s all over here somewhere (<a href="https://cces.gov.harvard.edu/data" class="uri">https://cces.gov.harvard.edu/data</a>). In the spirit of open science I’m just giving you a heavily processed dataframe and hiding the source material.</p>
+<p>The data we will be looking at is turnout data in the 2016 election. It’s all over here somewhere (<a href="https://cces.gov.harvard.edu/data" class="uri">https://cces.gov.harvard.edu/data</a>). In the spirit of open science, I’m just giving you a heavily processed dataframe and hiding the source material.</p>
 <p>First of all, let’s load up the data and have a look at it.</p>
 <pre class="r"><code>df = read_delim(&quot;turnout_binomial.delim&quot;, &quot; &quot;)</code></pre>
 <pre><code>## Parsed with column specification:
@@ -437,16 +437,16 @@ fit = model$sample(data = list(N = nrow(df_simple),
                                turned_out = df_simple$turned_out,
                                male = df_simple$male),
                    cores = 4)</code></pre>
-<pre class="r"><code>fit</code></pre>
+<pre class="r"><code>print(fit)</code></pre>
 <pre><code>## Warning: NAs introduced by coercion</code></pre>
 <pre><code>##   variable      mean    median   sd  mad        q5       q95 rhat ess_bulk
-##  lp__      -29805.92 -29805.60 0.98 0.74 -29807.80 -29805.00 1.00     1915
-##  intercept      0.53      0.53 0.01 0.01      0.51      0.54 1.00     3671
-##  slope         -0.07     -0.07 0.02 0.02     -0.10     -0.04 1.00     3602
+##  lp__      -29805.97 -29805.70 1.02 0.74 -29808.00 -29805.00 1.00     1667
+##  intercept      0.53      0.53 0.01 0.01      0.51      0.54 1.00     3464
+##  slope         -0.07     -0.07 0.02 0.02     -0.10     -0.04 1.00     3254
 ##  ess_tail
 ##        NA
-##      2757
-##      3024</code></pre>
+##      2687
+##      2487</code></pre>
 <p>Alright, great, that model fit. Now before we move on, let’s discuss the computational aspects of this model.</p>
 <p>The big work is all done in the model block:</p>
 <pre><code>turned_out ~ binomial_logit(M, intercept + slope * male);</code></pre>
@@ -557,29 +557,29 @@ fit = model$sample(data = list(N = nrow(df_groups),
                                turned_out = df_groups$turned_out,
                                male = df_groups$male),
                    cores = 4)</code></pre>
-<pre class="r"><code>fit</code></pre>
-<pre><code>##     variable      mean    median    sd   mad        q5       q95 rhat ess_bulk
-##  lp__        -29779.96 -29793.00 74.59 99.70 -29856.50 -29696.70 1.79        5
-##  intercept        0.12      0.01  0.80  0.79     -1.16      1.53 1.46        7
-##  slope           -0.06     -0.06  0.02  0.02     -0.10     -0.03 1.06       50
-##  states_mean      0.40      0.52  0.80  0.79     -1.00      1.70 1.46        7
-##  states_sd        0.08      0.05  0.08  0.08      0.00      0.19 2.10        5
-##  states[1]        0.33      0.45  0.82  0.84     -1.04      1.64 1.50        7
-##  states[2]        0.42      0.53  0.80  0.78     -1.00      1.72 1.44        8
-##  states[3]        0.48      0.57  0.79  0.74     -0.96      1.76 1.42        8
-##  states[4]        0.47      0.56  0.80  0.74     -0.97      1.77 1.42        8
-##  states[5]        0.32      0.44  0.82  0.85     -1.04      1.64 1.51        7
+<pre class="r"><code>print(fit)</code></pre>
+<pre><code>##     variable      mean    median   sd  mad        q5       q95 rhat ess_bulk
+##  lp__        -29705.45 -29705.10 7.08 7.12 -29717.40 -29694.50 1.00      883
+##  intercept        0.25      0.25 0.70 0.70     -0.88      1.38 1.00     3588
+##  slope           -0.06     -0.06 0.02 0.02     -0.09     -0.02 1.00     7488
+##  states_mean      0.27      0.28 0.70 0.70     -0.85      1.41 1.00     3576
+##  states_sd        0.16      0.16 0.02 0.02      0.12      0.20 1.00     1106
+##  states[1]        0.12      0.12 0.70 0.69     -1.01      1.27 1.00     3571
+##  states[2]        0.30      0.30 0.71 0.71     -0.85      1.46 1.00     3563
+##  states[3]        0.43      0.44 0.70 0.69     -0.70      1.58 1.00     3592
+##  states[4]        0.41      0.41 0.71 0.71     -0.73      1.57 1.00     3604
+##  states[5]        0.10      0.11 0.70 0.70     -1.03      1.24 1.00     3592
 ##  ess_tail
-##        71
-##        28
-##       348
-##        28
-##       125
-##        23
-##        30
-##        29
-##        35
-##        22
+##      1917
+##      2888
+##      2700
+##      2892
+##      2269
+##      2961
+##      2875
+##      3033
+##      2915
+##      2934
 ## 
 ##  # showing 10 of 56 rows (change via 'max_rows' argument)</code></pre>
 <p>Alright great, it fit. What did we learn?</p>
@@ -634,32 +634,32 @@ fit = model$sample(data = list(N = nrow(df_groups),
                                turned_out = df_groups$turned_out,
                                male = df_groups$male),
                    cores = 4)</code></pre>
-<pre class="r"><code>fit</code></pre>
-<pre><code>##                variable      mean    median    sd   mad        q5       q95
-##  lp__                   -29717.05 -29716.40 10.31 10.38 -29734.71 -29700.80
-##  intercept                   0.25      0.25  0.71  0.72     -0.91      1.42
-##  slope                      -0.01     -0.01  0.71  0.71     -1.15      1.15
-##  states_intercepts_mean      0.28      0.28  0.71  0.72     -0.89      1.44
-##  states_intercepts_sd        0.16      0.16  0.02  0.02      0.13      0.20
-##  states_slopes_mean         -0.04     -0.05  0.70  0.71     -1.21      1.11
-##  states_slopes_sd            0.12      0.12  0.03  0.03      0.07      0.17
-##  states_intercepts[1]        0.12      0.12  0.71  0.73     -1.06      1.29
-##  states_intercepts[2]        0.30      0.31  0.72  0.73     -0.89      1.49
-##  states_intercepts[3]        0.43      0.43  0.71  0.73     -0.75      1.60
-##  rhat ess_bulk ess_tail
-##  1.00      963     1788
-##  1.00     3718     2939
-##  1.00     4139     2869
-##  1.00     3708     2986
-##  1.00     1310     2496
-##  1.00     4134     2869
-##  1.00     1866     2244
-##  1.00     3752     2939
-##  1.00     3839     2982
-##  1.00     3726     2984
+<pre class="r"><code>print(fit)</code></pre>
+<pre><code>##                variable      mean    median   sd  mad        q5       q95 rhat
+##  lp__                   -29717.98 -29717.70 9.80 9.79 -29734.40 -29702.50 1.00
+##  intercept                   0.25      0.25 0.70 0.70     -0.91      1.41 1.00
+##  slope                      -0.01     -0.01 0.72 0.71     -1.20      1.15 1.00
+##  states_intercepts_mean      0.28      0.28 0.70 0.70     -0.88      1.44 1.00
+##  states_intercepts_sd        0.16      0.16 0.02 0.02      0.13      0.20 1.00
+##  states_slopes_mean         -0.04     -0.04 0.72 0.71     -1.20      1.14 1.00
+##  states_slopes_sd            0.11      0.11 0.03 0.03      0.06      0.17 1.00
+##  states_intercepts[1]        0.12      0.13 0.71 0.70     -1.05      1.31 1.00
+##  states_intercepts[2]        0.31      0.31 0.72 0.71     -0.86      1.50 1.00
+##  states_intercepts[3]        0.43      0.44 0.70 0.69     -0.73      1.59 1.00
+##  ess_bulk ess_tail
+##       886     1718
+##      3467     2876
+##      3831     2718
+##      3466     2920
+##      1150     1709
+##      3832     2751
+##      1450     1542
+##      3512     3064
+##      3587     3066
+##      3441     3011
 ## 
 ##  # showing 10 of 109 rows (change via 'max_rows' argument)</code></pre>
-<p>Alright great, it ran.</p>
+<p>Alright great, it ran hopefully it converged to something.</p>
 <ol style="list-style-type: decimal">
 <li>This can again be written as a sparse matrix multiply, but now the <code>Z</code> matrix has values that are not just ones.</li>
 </ol>

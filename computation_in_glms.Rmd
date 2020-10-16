@@ -402,7 +402,7 @@ fit = model$sample(data = list(N = nrow(df_groups),
 print(fit)
 ```
 
-Alright great, it ran.
+Alright great, it ran hopefully it converged to something.
 
 1. This can again be written as a sparse matrix multiply, but now the `Z`
 matrix has values that are not just ones.

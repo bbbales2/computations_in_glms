@@ -1,0 +1,587 @@
+---
+title: "Computation in GLMs"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(ggplot2)
+library(cmdstanr)
+library(brms)
+```
+
+## Introduction
+
+The goals here are to outline:
+
+1. How a dataframe turns into a regression
+2. How a regression is expressed in Stan
+3. Possibilities for improving #2
+
+## Motivating a regression
+
+The data we will be looking at is turnout data in the 2016 election. It's all
+over here somewhere (https://cces.gov.harvard.edu/data). In the spirit of open
+science, I'm just giving you a heavily processed dataframe and hiding the source
+material.
+
+First of all, let's load up the data and have a look at it.
+
+```{r}
+df = read_delim("turnout_binomial.delim", " ")
+print(df)
+```
+
+Each row in this dataset is information about how many people in different
+demographic groups turned out for the 2016 election. The leftmost variable
+`turned_out` is the actual response variable, so on the first line 133 out
+of 170 surveyed female, Floridian, white voters aged 45-64, etc. etc. turned
+out to vote.
+
+What we do with data like this is estimate in each of these groups
+what the reported turnout in the survey group was and then we look at census
+data to figure out how many people are in these groups actually exist and
+then we can estimate the 2016 turnout (and do all sorts of follow up analysis
+with this).
+
+Because we're dealing with binary outcomes of a number of assumed homogenous
+people in different groups, we use the binomial as our likelihood. So we have
+`M` respondents and `turned_out` people actually reported they turned out -- what is
+the probability than any individual person would have turned out?
+
+The simple thing is to just look at `turned_out / M`, but that only works
+when `M` is large, and for many of our groups we have only a small number of
+people and such estimates will inevitably be too noisy to use, and so
+we will need to build a better model
+
+## The simplest model
+
+The first thing we might do is simplify our problem. Can we just estimate
+the probability of survey respondents reporting they have turned out to
+vote simply by knowing if they are male or female?
+
+In regression syntax, the symplest thing might look like:
+
+```
+turned_out ~ male
+```
+
+And we are understanding that this is a binomial and that the total number
+of people in each group are `M`.
+
+Before we do this regression we need to go ahead and compress the dataframe
+a bit. No need to worry about any of the covariates other than `male`.
+
+```{r}
+df_simple = df %>%
+  group_by(male) %>%
+  summarize(turned_out = sum(turned_out),
+            M = sum(M))
+print(df_simple)
+```
+
+This translates to the Stan code in [models/simple.stan](somewhere)
+
+```{r echo = TRUE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE}
+model = cmdstan_model("models/simple.stan")
+fit = model$sample(data = list(N = nrow(df_simple),
+                               M = df_simple$M,
+                               turned_out = df_simple$turned_out,
+                               male = df_simple$male),
+                   cores = 4)
+```
+
+```{r}
+print(fit)
+```
+
+Alright, great, that model fit. Now before we move on, let's discuss the
+computational aspects of this model.
+
+The big work is all done in the model block:
+
+```
+turned_out ~ binomial_logit(M, intercept + slope * male);
+```
+
+1. There is an `intercept` and `slope` weren't part of the regression version
+of the problem.
+
+Traditionaly R regression syntax does not define the parameters. They are
+implicitly defined by what covariates are included on the right hand side.
+
+`male` is a covariate, and so it gets a coefficient. If the intercept is not
+specified, it is assumed to be there.
+
+```turned_out ~ 1 + male``` is a verbose way to say include the intercept.
+
+```turned_out ~ -1 + male``` is a way of saying do not include the intercept.
+
+2. This is a vectorized statement. It is equivalent to:
+
+```
+for(n in 1:N) {
+  turned_out[n] ~ binomial_logit(M[n], intercept + slope * male[n]);
+}
+```
+
+3. The model block in Stan represents a function which returns a single
+scalar, the log density of the model. You don't see the log density increments
+because they are hidden behind `~` syntactic sugar. The log density is
+actually called `target` in Stan, and the previous loop is equivalent
+up to a constant of proportionality to:
+
+```
+for(n in 1:N) {
+  target += binomial_logit(turned_out[n] | M[n], intercept + slope * male[n]);
+}
+```
+
+"up to a constant of proportionality" means that for the sake of sampling,
+they are the same, but in Stan the `~` operation actually drops some
+unnecessary calculations.
+
+A Stan model is a Bayesian log density. This means it is a function mapping
+`P` parameters to a scalar output (the log density). This is why we do
+reverse mode autodiff -- it is most efficient when there is only one output
+but many inputs.
+
+4. The distribution I called was `binomial_logit`, not `binomial`. This is
+because the linear part of the model, `intercept + slope * male`, is
+unconstrained. `male` is either -0.5 (female) or 0.5 (male), but `slope`
+and `intercept can be anything, and so can the total. To map this
+unconstrained value to a constrained value, we use the inverse logit function.
+
+For convenience, here is a reminder plot of inverse logit:
+```{r}
+inv_logit = function(x) { 1 / (1 + exp(-x)) }
+curve(inv_logit, -5, 5)
+```
+
+`binomial_logit(N, x)` is the same as `binomial(N, inv_logit(x))`, but the
+numerics are more stable for the first so we use that.
+
+We use `inv_logit` for convenience. Something else, or a low precision
+approximation, would probably be fine.
+
+5. The largest pieces of data do not change from model evaluation to model
+evaluation. What changes are the parameters.
+
+This means the length `N` array of integers `M` does not change, the length
+`N` array of responses do not change, and the length `N` covariate `male` does
+not change. This means these things can be communicated once to every device
+involved in the computation and never need sent again.
+
+If we look at the likelihood calculation as a whole, even though it is the
+majority of the work, only two doubles (`intercept` and `slope`) need shipped
+to the accerator during the forward pass and one double (`target`) returned.
+On the backwards pass, two doubles (the adjoints of `intercept` and `slope`)
+need shipped back from the accelerator.
+
+## Intermission
+
+We're one section in but I think it is time for an intermission. We have
+talked about everything in GLMs except the hierarchical terms.
+
+There are a few modifications from here:
+
+1. We can add more covariates like `male`, and for each one there will be an
+additional parameter. Pretend we have another vector `income` which is a
+continuous variable representing the average income of a group. There would be
+an additional parameter `slope2` to go along with this. Something like:
+
+```
+turned_out ~ binomial_logit(M, intercept + slope1 * male + slope2 * income);
+```
+
+We can join the two vectors `male` and `income` into a single matrix `X`, and
+then combine `slope1` and `slope2` into a single vector `beta`, and the
+regression now looks like:
+
+```
+turned_out ~ binomial_logit(M, intercept + X * beta);
+```
+
+where `X` is an `N` by `K` design matrix of covariates and `beta` is a length
+`K` vector of parameters. Usually the non-hierarchical/population level terms
+are though of computationally as a matrix-vector multiply for this reason.
+
+2. We can change the likelihood to something else. There are a lot of options.
+
+We might have a normal:
+```
+y ~ normal(intercept + X * beta, sigma);
+```
+
+We might have a negative binomial:
+```
+y ~ neg_binomial_2_log(intercept + X * beta, phi);
+```
+
+There are many more families supported in `brms`, which is probably a good
+reference on the things we should be concerned about implementing:
+https://cran.r-project.org/web/packages/brms/vignettes/brms_families.html
+
+3. Changing the likelihood often means changing the link function. The three
+most common inverse link functions are `exp`, `inv_logit`, `probit`, and
+`softmax`. Also some likelihoods and parameters do not require a link function
+at all. All four terms could be approximated.
+
+4. We can have multiple linear models in one likelihood. For instance, we
+might predict both the mean and standard deviation of a normal distribution:
+
+```
+y ~ normal(intercept0 + X0 * beta0, exp(intercept1 + X1 * beta1));
+```
+
+And so everything up until now is:
+
+1. Linear model, expressed as a dense matrix vector multiply
+2. Link function
+3. Likelihood
+
+## Hierarchical terms
+
+The only thing left to discuss are the hierarchical terms, of which there are
+two:
+
+`(1 | group)` and `(x | state)`
+
+Everything else is a variation on these.
+
+The term `(1 | group)` means add to the model an intercept that varies by
+what group the response belongs to. So we can expand the regression above
+to say that we expect the turnout to be different in every state:
+
+```
+turned_out ~ male + (1 | state)
+```
+
+This corresponds to the Stan model in [models/groups.stan](somewhere).
+
+Similarly to before, we have to do a little work to prepare the regression.
+
+```{r}
+df_groups = df %>%
+  mutate(state_idx = df$state %>% as.factor %>% as.numeric) %>%
+  group_by(male, state_idx) %>%
+  summarize(turned_out = sum(turned_out),
+            M = sum(M))
+print(df_groups)
+```
+
+And now that we have states converted into integers $[1, 51]$ we can run the
+Stan model:
+
+```{r echo = TRUE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE}
+model = cmdstan_model("models/groups.stan")
+fit = model$sample(data = list(N = nrow(df_groups),
+                               M = df_groups$M,
+                               S = max(df_groups$state_idx),
+                               state_idx = df_groups$state_idx,
+                               turned_out = df_groups$turned_out,
+                               male = df_groups$male),
+                   cores = 4)
+```
+
+```{r}
+print(fit)
+```
+
+Alright great, it fit. What did we learn?
+
+1. The operations we added look like a sparse matrix vector multiply. Perhaps
+this is unsurprising, after all, it is a linear model we are evaluating.
+However the resemblance is not superficial.
+
+The vectorized code in our Stan model was:
+
+```
+turned_out ~ binomial_logit(M, intercept + slope * male + states[state_idx]);
+```
+
+The term `states[state_idx]` expands to:
+```
+vector[N] output; // = states[state_idx]
+for(n in N) {
+  output[n] = states[state_idx[n]];
+}
+```
+
+So this means for the nth response, take the `state_idx[n]` th element of the
+vector `states`.
+
+We could construct a matrix `Z` that was `N` rows by `S` columns
+(there are `S` states) such that on the nth row the only nonzero was a one
+in the `state_idx[n]` th column. With this matrix,
+`states[state_idx] == Z * states`.
+
+The relationship is even closer if we look at a compressed-sparse-row
+format for the sparse matrix.
+
+So if `state_idx` and `states` are defined like this:
+
+```
+state_idx = { 1, 2, 2, 4, ... }
+states = [ 1.1, 2.2, 3.3, 4.4, ... ]
+```
+
+The matrix `Z` looks like:
+```
+[ 1, 0, 0, 0, ..., 0,
+  0, 1, 0, 0, ..., 0,
+  0, 1, 0, 0, ..., 0,
+  0, 0, 0, 1, ..., 0 ]
+```
+
+And then the CSR format (using the notation of
+[Wikipedia](https://en.wikipedia.org/w/index.php?title=Sparse_matrix#Compressed_sparse_row_(CSR,_CRS_or_Yale_format))
+looks like:
+
+```
+V         = { 1.0, 1.0, 1.0, 1.0, ... }
+COL_INDEX = { 1, 2, 2, 4, ... }
+ROW_INDEX = [ 1, 2, 3, 4, ... ]
+```
+
+So the values are all ones since the values of the matrix are ones, the row
+index variable is extraneous since effectively there is only one non-zero in
+every row, and `COL_INDEX` is the same as `state_idx`.
+
+2. For every member of the group, we added one parameter. In this case,
+`S = 51` so that is 51 extra paramaters that need sent to the likelihood at
+every evaluation and 51 adjoints that need sent back in the reverse pass.
+
+For every group, we added two hyperparameters, `states_mean` and `states_sd`.
+
+Evaluating the prior is not nearly as expensive as the likelihood in GLMs, and
+this is not something that would need accelerated, so these add nothing to the
+complexity for the accelerator.
+
+3. `states_idx` only needs copied to the accelerator once.
+
+4. The for loop version of this is actually pretty readable:
+
+```
+for(n in 1:N) {
+  turned_out[n] ~ binomial_logit(M[n], intercept + slope * male[n] + states[state_idx[n]]);
+}
+```
+
+Nothing much to say, other than that's what it looks like. It is not dissimilar
+from the indexing you'd find in a statistics paper.
+
+Alright, now it is time to describe the last variation on hierarchical
+parameters, `(x | group)`. As `(1 | group)` is a group level intercept,
+`(x | group)` is a group level slope. In our case, we might be interested
+in the regression:
+
+```
+turned_out ~ male + (1 + male | state)
+```
+
+What this means is we get an extra per-state slope coefficient for the
+covariate `male`.
+
+The Stan code for this is given in [models/groups_slopes.stan](somewhere).
+The data for the last fit will work for this one as well.
+
+```{r echo = TRUE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE}
+model = cmdstan_model("models/groups_slopes.stan")
+fit = model$sample(data = list(N = nrow(df_groups),
+                               M = df_groups$M,
+                               S = max(df_groups$state_idx),
+                               state_idx = df_groups$state_idx,
+                               turned_out = df_groups$turned_out,
+                               male = df_groups$male),
+                   cores = 4)
+```
+
+```{r}
+print(fit)
+```
+
+Alright great, it ran.
+
+1. This can again be written as a sparse matrix multiply, but now the `Z`
+matrix has values that are not just ones.
+
+If `state_idx`, `states_slopes`, and `male` are defined like this:
+
+```
+state_idx = { 1, 2, 2, 4, ... }
+states = [ 1.1, 2.2, 3.3, 4.4, ... ]
+male = [-0.5, 0.5, 0.5, -0.5, ... ]
+```
+
+The matrix `Z` looks like:
+```
+[ -0.5,    0,    0,    0, ...,    0,
+     0,  0.5,    0,    0, ...,    0,
+     0,  0.5,    0,    0, ...,    0,
+     0,    0,    0, -0.5, ...,    0 ]
+```
+
+And then the CSR format (using the notation of
+[Wikipedia](https://en.wikipedia.org/w/index.php?title=Sparse_matrix#Compressed_sparse_row_(CSR,_CRS_or_Yale_format))
+looks like:
+
+```
+V         = { -0.5, 0.5, 0.5, -0.5, ... }
+COL_INDEX = { 1, 2, 2, 4, ... }
+ROW_INDEX = [ 1, 2, 3, 4, ... ]
+```
+
+2. Again this term added `S = 51` parameters that need passed to the
+likelihood and two hyperparameters that do not need passed in.
+
+3. Because the slope indexes using the same index as the state, nothing
+extra needs copied to the accelerator. In fact, this means that the indexing
+defined by the sparse matrix vector multiply will be less memory efficient
+than that defined by the for loop (the for loop knows to use the same index
+for both the slope and the intercept terms whereas the sparse matrix
+format would have separate indices for these).
+
+## Getting slow
+
+As much as those models ran quickly, it is very easy to write an expanded
+model that runs slowly using `brms`. This is a model I had sitting around in
+a repository on my computer. I don't know if it makes sense. I do know it
+runs slowly. Until we can make these things run quickly, it will not be easy
+for people to really genuinely work out what to model. It is an iterative thing.
+
+```{r, eval = FALSE, echo = TRUE}
+fit = brm(turned_out | trials(M) ~ male +
+            (1 | state) + (1 | race) + (1 | educ) + (1 | age) + (1 | marstat) +
+            (male - 1 | state) + (male - 1 | race) + (male - 1 | educ) + (male - 1 | age) + (male - 1 | marstat) +
+            (1 | race:educ) + (1 | race:age) + (1 | race:marstat) +
+            (1 | educ:age) + (1 | educ:marstat) +
+            (1 | age:marstat),
+          data = df,
+          family = "binomial",
+          cores = 4,
+          iter = 100,
+          refresh = 1,
+          prior = set_prior("normal(0, 1)", class = "b") +
+            set_prior("normal(0, 1)", class = "Intercept") +
+            set_prior("normal(0, 1)", class = "sd"))
+```
+
+This took about four minutes to run 100 iterations on my computer. That's a
+start, but in reality we'll probably need to take a couple thousand draws
+from our posterior. That is not a hard and fast rule, but 1000 draws is a good
+number to keep in mine.
+
+This means that this model would take about thirty minutes to run, which is
+not that bad, but keep in mind:
+
+1. This is one model of the 2016 election. To think about modeling this, we
+will need to run many models iteratively.
+
+2. If we wanted to add more years to this, perhaps the 2008 or 2012 elections,
+then we could easily make the model two or three times bigger.
+
+3. If we also wanted to model vote preference, we could again double the size
+of the regression.
+
+4. If we wanted to model another survey on top of the CCES, we could again double
+the size of the regression.
+
+5. If we wanted to understand not just presidential preference, but also
+congressional preferences, we could easily double the size of the model.
+
+Anyway the point is that it is easy to grow this.
+
+## Constraints
+
+To make it easier to think about the problem, let's talk about problem scales.
+
+So if we think about the linear model in terms of a dense matrix vector product
+and a sparse matrix vector product, we have Stan code that looks like:
+
+```
+turned_out ~ binom(M, intercept + X * beta + Z * gamma)
+```
+
+1. For `N` responses `y`, `X` is dense matrix of size `N` by `K` for `K`
+covariates, and `Z` is a sparse matrix of size `N` by `L` for `L` hierarchical
+terms.
+
+In this case `N` is 7851, `K` is 1, and `L` is about 233. You can compute `L`
+by knowing how many members of each group there are and looking at the
+hierarchical terms. Here there are 51 states, 4 race categories,
+5 education levels, 4 age groups, and 3 marital statuses.
+
+2. In this regression, the intercept (scalar), `beta` (vector of length `K`),
+and `gamma` (vector of length `L`),  would need sent to the accelerator in the
+forward pass and then the adjoints of these (which are the same size as the
+variables themselves) sent back from the accelerator in the reverse pass. So
+that is 235 doubles in and out for the entire likelihood calculation
+(`1 + K + L`).
+
+3. You have `N` integer responses and group sizes, you need to index into five
+groups, and you have one continuous covariate. This means that for static
+data that only needs shipped once there are `2 * N + 5 * N` integers and N
+real values. If we assume 64bit integers and reals, then that is `62808 * 8`
+bytes of data.
+
+4. The G-man philosophy is with big data comes big models, so we expect the
+number of parameters to grow as the data grows. The philosophy is if you have
+more data, you know more about your problem, and you should do more to model
+it.
+
+I think realistically `N` and `L` are the parameters that scale though. I do
+not expect `K` to scale in the same way. I'm making this argument because
+the dense matrix vector terms usually correspond to population level things.
+As you add more data, you add complexity in the groupings, and so that is where
+I expect the model to get more complicated. The population itself will probably
+remain relatively small. I may regret saying this but I want to emphasize the
+importance of the sparse matrix vector term.
+
+The bleeding edge of Stan models fit now would be `N` around a million and
+`L` in the upper tens of thousands.
+
+5. matrix-vector multiplies are always memory bound be they sparse or dense.
+
+The only way to make this more efficient (other than getting faster memory) is
+to switch the matrix-vector multiply into a matrix matrix multiply.
+
+Any time we do MCMC we need to run multiple chains. Every chain has the same
+data but different parameters. Assume we are effectively evaluating:
+
+```
+turned_out ~ binomial(M, intercept1 + X * beta1 + Z * gamma1)
+turned_out ~ binomial(M, intercept2 + X * beta2 + Z * gamma2)
+turned_out ~ binomial(M, intercept3 + X * beta3 + Z * gamma3)
+turned_out ~ binomial(M, intercept4 + X * beta4 + Z * gamma4)
+```
+
+By sticking the `beta` and `gamma` vectors together, we can compute these
+likelihoods together as matrix matrix products. That is first compute:
+
+```
+X * [beta1, beta2, beta3, beta4] + Z * [gamma1, gamma2, gamma3, gamma4]
+```
+
+in a combined way and then redistribute the values to their separate chains.
+
+5. I'm going to make some really big assumptions here to give you some idea
+of the ideal timings on all these calculations.
+
+The default algorithm in Stan is a variant of HMC. If it is operating
+fairly efficiently, then we probably need somewhere between a thousand and
+two thousand draws (Stan's default is 2000) in a few chains (Stan's default
+is four). For each HMC draw we probably need somewhere between 100 to 300
+gradient evaluations (Stan defaults to 1 to 1023).
+
+To iterate very quickly on a model, it would be nice to do a full inference
+in a couple minutes. Ten is fine. Once models take thirty minutes or an hour
+or ten hours, they start to change workflow in an undesirable way. Obviously
+there will always be calculations that take hours, but it would be nice if we
+really moved the need on what is possible in a few minutes.
+
+So if we need to evaluate 200 * 2000 gradients in 120 seconds, that implies
+300 microseconds per gradient evaluation if the accelerator is serving one
+chain. Again, the I/O requirements are `O(K + L)` doubles in on the forward
+pass and the same number of doubles out on the backward pass.

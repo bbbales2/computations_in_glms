@@ -368,16 +368,11 @@ summary {
 
 <div id="introduction" class="section level2">
 <h2>Introduction</h2>
-<p>The goals here are to outline:</p>
-<ol style="list-style-type: decimal">
-<li>How a dataframe turns into a regression</li>
-<li>How a regression is expressed in Stan</li>
-<li>Possibilities for improving #2</li>
-</ol>
+<p>The goals here are to computationally motivate interest in the likelihood terms of GLMs.</p>
 </div>
 <div id="motivating-a-regression" class="section level2">
 <h2>Motivating a regression</h2>
-<p>The data we will be looking at is turnout data in the 2016 election. It’s all over here somewhere (<a href="https://cces.gov.harvard.edu/data" class="uri">https://cces.gov.harvard.edu/data</a>). In the spirit of open science, I’m just giving you a heavily processed dataframe and hiding the source material.</p>
+<p>The data we will be looking at is turnout data in the 2016 election. It’s all over here somewhere (<a href="https://cces.gov.harvard.edu/data" class="uri">https://cces.gov.harvard.edu/data</a>). In the spirit of open science, this is a heavily processed dataframe presented as if it was prepared in some sensible way without the information to support that.</p>
 <p>First of all, let’s load up the data and have a look at it.</p>
 <pre class="r"><code>df = read_delim(&quot;turnout_binomial.delim&quot;, &quot; &quot;)</code></pre>
 <pre><code>## Parsed with column specification:
@@ -408,16 +403,16 @@ summary {
 ## 10         84   114  -0.5 pennsylvania white some_or_assoc 45-64 married   114
 ## # … with 7,841 more rows</code></pre>
 <p>Each row in this dataset is information about how many people in different demographic groups turned out for the 2016 election. The leftmost variable <code>turned_out</code> is the actual response variable, so on the first line 133 out of 170 surveyed female, Floridian, white voters aged 45-64, etc. etc. turned out to vote.</p>
-<p>What we do with data like this is estimate in each of these groups what the reported turnout in the survey group was and then we look at census data to figure out how many people are in these groups actually exist and then we can estimate the 2016 turnout (and do all sorts of follow up analysis with this).</p>
+<p>What we do with data like this is estimate in each of these groups what the reported turnout in the survey group was, look at census data to figure out how many people are in these groups actually exist, and then estimate what the 2016 turnout (and do all sorts of follow up analysis with this).</p>
 <p>Because we’re dealing with binary outcomes of a number of assumed homogenous people in different groups, we use the binomial as our likelihood. So we have <code>M</code> respondents and <code>turned_out</code> people actually reported they turned out – what is the probability than any individual person would have turned out?</p>
-<p>The simple thing is to just look at <code>turned_out / M</code>, but that only works when <code>M</code> is large, and for many of our groups we have only a small number of people and such estimates will inevitably be too noisy to use, and so we will need to build a better model</p>
+<p>The simple thing is to just look at <code>turned_out / M</code>, but that only works when <code>M</code> is large, and for many of our groups we have only a small number of people and such estimates will inevitably be too noisy to use, and so we will need to do better modeling (and here is the need for Stan).</p>
 </div>
 <div id="the-simplest-model" class="section level2">
 <h2>The simplest model</h2>
 <p>The first thing we might do is simplify our problem. Can we just estimate the probability of survey respondents reporting they have turned out to vote simply by knowing if they are male or female?</p>
-<p>In regression syntax, the symplest thing might look like:</p>
+<p>In regression syntax, this looks like:</p>
 <pre><code>turned_out ~ male</code></pre>
-<p>And we are understanding that this is a binomial and that the total number of people in each group are <code>M</code>.</p>
+<p>It would be specified somewhere else that this is a binomial and that the total number of people in each group are <code>M</code>.</p>
 <p>Before we do this regression we need to go ahead and compress the dataframe a bit. No need to worry about any of the covariates other than <code>male</code>.</p>
 <pre class="r"><code>df_simple = df %&gt;%
   group_by(male) %&gt;%
@@ -440,84 +435,98 @@ fit = model$sample(data = list(N = nrow(df_simple),
 <pre class="r"><code>print(fit)</code></pre>
 <pre><code>## Warning: NAs introduced by coercion</code></pre>
 <pre><code>##   variable      mean    median   sd  mad        q5       q95 rhat ess_bulk
-##  lp__      -29806.00 -29805.70 1.02 0.74 -29808.10 -29805.00 1.00     1780
-##  intercept      0.53      0.53 0.01 0.01      0.51      0.54 1.00     3463
-##  slope         -0.07     -0.07 0.02 0.02     -0.10     -0.04 1.00     2693
+##  lp__      -29805.93 -29805.65 0.95 0.67 -29807.81 -29805.00 1.00     1930
+##  intercept      0.53      0.53 0.01 0.01      0.51      0.54 1.00     4176
+##  slope         -0.07     -0.07 0.02 0.02     -0.10     -0.04 1.00     3702
 ##  ess_tail
 ##        NA
-##      2345
-##      2316</code></pre>
+##      3034
+##      2851</code></pre>
 <p>Alright, great, that model fit. Now before we move on, let’s discuss the computational aspects of this model.</p>
+<div id="computation" class="section level3">
+<h3>1. Computation</h3>
 <p>The big work is all done in the model block:</p>
 <pre><code>turned_out ~ binomial_logit(M, intercept + slope * male);</code></pre>
-<ol style="list-style-type: decimal">
-<li><p>There is an <code>intercept</code> and <code>slope</code> weren’t part of the regression version of the problem.</p>
+</div>
+<div id="implicit-parameters" class="section level3">
+<h3>2. Implicit parameters</h3>
+<p>There is an <code>intercept</code> and <code>slope</code> weren’t part of the regression version of the problem.</p>
 <p>Traditionaly R regression syntax does not define the parameters. They are implicitly defined by what covariates are included on the right hand side.</p>
 <p><code>male</code> is a covariate, and so it gets a coefficient. If the intercept is not specified, it is assumed to be there.</p>
 <p><code>turned_out ~ 1 + male</code> is a verbose way to say include the intercept.</p>
-<p><code>turned_out ~ -1 + male</code> is a way of saying do not include the intercept.</p></li>
-<li><p>This is a vectorized statement. It is equivalent to:</p>
+<p><code>turned_out ~ -1 + male</code> is a way of saying do not include the intercept.</p>
+</div>
+<div id="vectorization" class="section level3">
+<h3>3. Vectorization</h3>
+<p>This is a vectorized statement. It is equivalent to:</p>
 <pre><code>for(n in 1:N) {
- turned_out[n] ~ binomial_logit(M[n], intercept + slope * male[n]);
-}</code></pre></li>
-<li><p>The model block in Stan represents a function which returns a single scalar, the log density of the model. You don’t see the log density increments because they are hidden behind <code>~</code> syntactic sugar. The log density is actually called <code>target</code> in Stan, and the previous loop is equivalent up to a constant of proportionality to:</p>
+  turned_out[n] ~ binomial_logit(M[n], intercept + slope * male[n]);
+}</code></pre>
+</div>
+<div id="the-model-block-is-a-function-from-rp-rightarrow-r" class="section level3">
+<h3>4. The model block is a function from <span class="math inline">\(R^P \rightarrow R\)</span></h3>
+<p>The model block in Stan represents a function which returns a single scalar, the log density of the model. You don’t see the log density increments because they are hidden behind <code>~</code> syntactic sugar. The log density is actually called <code>target</code> in Stan, and the previous loop is equivalent up to a constant of proportionality to:</p>
 <pre><code>for(n in 1:N) {
- target += binomial_logit(turned_out[n] | M[n], intercept + slope * male[n]);
+  target += binomial_logit(turned_out[n] | M[n], intercept + slope * male[n]);
 }</code></pre>
 <p>“up to a constant of proportionality” means that for the sake of sampling, they are the same, but in Stan the <code>~</code> operation actually drops some unnecessary calculations.</p>
-<p>A Stan model is a Bayesian log density. This means it is a function mapping <code>P</code> parameters to a scalar output (the log density). This is why we do reverse mode autodiff – it is most efficient when there is only one output but many inputs.</p></li>
-<li><p>The distribution I called was <code>binomial_logit</code>, not <code>binomial</code>. This is because the linear part of the model, <code>intercept + slope * male</code>, is unconstrained. <code>male</code> is either -0.5 (female) or 0.5 (male), but <code>slope</code> and `intercept can be anything, and so can the total. To map this unconstrained value to a constrained value, we use the inverse logit function.</p>
-<p>For convenience, here is a reminder plot of inverse logit:</p></li>
-</ol>
+<p>A Stan model is a Bayesian log density. This means it is a function mapping <code>P</code> parameters to a scalar output (the log density). This is why we do reverse mode autodiff – it is most efficient when there is only one output but many inputs.</p>
+</div>
+<div id="link-functions" class="section level3">
+<h3>5. Link functions</h3>
+<p>The distribution in the code is <code>binomial_logit</code>, not <code>binomial</code>. This is because the linear part of the model, <code>intercept + slope * male</code>, is unconstrained. <code>male</code> is either -0.5 (female) or 0.5 (male), but <code>slope</code> and `intercept can be anything, and so can the total. To map this unconstrained value to a constrained value, we use the inverse logit function.</p>
+<p>For convenience, here is a reminder plot of inverse logit:</p>
 <pre class="r"><code>inv_logit = function(x) { 1 / (1 + exp(-x)) }
 curve(inv_logit, -5, 5)</code></pre>
 <p><img src="data:image/png;base64,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" width="672" /></p>
-<pre><code>`binomial_logit(N, x)` is the same as `binomial(N, inv_logit(x))`, but the</code></pre>
-<p>numerics are more stable for the first so we use that.</p>
-<pre><code>We use `inv_logit` for convenience. Something else, or a low precision</code></pre>
-<p>approximation, would probably be fine.</p>
-<ol start="5" style="list-style-type: decimal">
-<li><p>The largest pieces of data do not change from model evaluation to model evaluation. What changes are the parameters.</p>
-<p>This means the length <code>N</code> array of integers <code>M</code> does not change, the length <code>N</code> array of responses do not change, and the length <code>N</code> covariate <code>male</code> does not change. This means these things can be communicated once to every device involved in the computation and never need sent again.</p>
-<p>If we look at the likelihood calculation as a whole, even though it is the majority of the work, only two doubles (<code>intercept</code> and <code>slope</code>) need shipped to the accerator during the forward pass and one double (<code>target</code>) returned. On the backwards pass, two doubles (the adjoints of <code>intercept</code> and <code>slope</code>) need shipped back from the accelerator.</p></li>
-</ol>
+<p><code>binomial_logit(N, x)</code> is the same as <code>binomial(N, inv_logit(x))</code>, but the numerics are more stable for the first so we use that.</p>
+<p>We use <code>inv_logit</code> for convenience. Something else, or a low precision approximation, would probably be fine.</p>
 </div>
-<div id="intermission" class="section level2">
-<h2>Intermission</h2>
-<p>We’re one section in but I think it is time for an intermission. We have talked about everything in GLMs except the hierarchical terms.</p>
-<p>There are a few modifications from here:</p>
-<ol style="list-style-type: decimal">
-<li>We can add more covariates like <code>male</code>, and for each one there will be an additional parameter. Pretend we have another vector <code>income</code> which is a continuous variable representing the average income of a group. There would be an additional parameter <code>slope2</code> to go along with this. Something like:</li>
-</ol>
+<div id="data-is-static" class="section level3">
+<h3>6. Data is static</h3>
+<p>The largest pieces of data do not change from model evaluation to model evaluation. What changes are the parameters.</p>
+<p>This means the length <code>N</code> array of integers <code>M</code> does not change, the length <code>N</code> array of responses do not change, and the length <code>N</code> covariate <code>male</code> does not change. This means these things can be communicated once to every device involved in the computation and never need sent again.</p>
+<p>If we look at the likelihood calculation as a whole, even though it is the majority of the work, only two doubles (<code>intercept</code> and <code>slope</code>) need shipped to the accerator during the forward pass and one double (<code>target</code>) returned. On the backwards pass, two doubles (the adjoints of <code>intercept</code> and <code>slope</code>) need shipped back from the accelerator.</p>
+</div>
+</div>
+<div id="common-modifications" class="section level2">
+<h2>Common modifications</h2>
+<p>There are a few modifications to make to this model.</p>
+<div id="matrix-vector-multiply-formulation" class="section level3">
+<h3>1. Matrix-vector multiply formulation</h3>
+<p>We can add more covariates like <code>male</code>, and for each one there will be an additional parameter. Pretend we have another vector <code>income</code> which is a continuous variable representing the average income of a group. There would be an additional parameter <code>slope2</code> to go along with this. Something like:</p>
 <pre><code>turned_out ~ binomial_logit(M, intercept + slope1 * male + slope2 * income);</code></pre>
-<pre><code>We can join the two vectors `male` and `income` into a single matrix `X`, and</code></pre>
-<p>then combine <code>slope1</code> and <code>slope2</code> into a single vector <code>beta</code>, and the regression now looks like:</p>
+<p>We can join the two vectors <code>male</code> and <code>income</code> into a single matrix <code>X</code>, and then combine <code>slope1</code> and <code>slope2</code> into a single vector <code>beta</code>, and the regression now looks like:</p>
 <pre><code>turned_out ~ binomial_logit(M, intercept + X * beta);</code></pre>
-<pre><code>where `X` is an `N` by `K` design matrix of covariates and `beta` is a length</code></pre>
-<p><code>K</code> vector of parameters. Usually the non-hierarchical/population level terms are though of computationally as a matrix-vector multiply for this reason.</p>
-<ol start="2" style="list-style-type: decimal">
-<li><p>We can change the likelihood to something else. There are a lot of options.</p>
+<p>where <code>X</code> is an <code>N</code> by <code>K</code> design matrix of covariates and <code>beta</code> is a length <code>K</code> vector of parameters. Usually the non-hierarchical/population level terms are though of computationally as a matrix-vector multiply for this reason.</p>
+</div>
+<div id="other-likelihoods" class="section level3">
+<h3>2. Other likelihoods</h3>
+<p>We can change the likelihood to something else. There are a lot of options.</p>
 <p>We might have a normal:</p>
 <pre><code>y ~ normal(intercept + X * beta, sigma);</code></pre>
 <p>We might have a negative binomial:</p>
 <pre><code>y ~ neg_binomial_2_log(intercept + X * beta, phi);</code></pre>
-<p>There are many more families supported in <code>brms</code>, which is probably a good reference on the things we should be concerned about implementing: <a href="https://cran.r-project.org/web/packages/brms/vignettes/brms_families.html" class="uri">https://cran.r-project.org/web/packages/brms/vignettes/brms_families.html</a></p></li>
-<li><p>Changing the likelihood often means changing the link function. The three most common inverse link functions are <code>exp</code>, <code>inv_logit</code>, <code>probit</code>, and <code>softmax</code>. Also some likelihoods and parameters do not require a link function at all. All four terms could be approximated.</p></li>
-<li><p>We can have multiple linear models in one likelihood. For instance, we might predict both the mean and standard deviation of a normal distribution:</p>
-<pre><code>y ~ normal(intercept0 + X0 * beta0, exp(intercept1 + X1 * beta1));</code></pre></li>
-</ol>
-<p>And so everything up until now is:</p>
+<p>There are many more families supported in <code>brms</code>, which is probably a good reference on the things we should be concerned about implementing: <a href="https://cran.r-project.org/web/packages/brms/vignettes/brms_families.html" class="uri">https://cran.r-project.org/web/packages/brms/vignettes/brms_families.html</a></p>
+</div>
+<div id="other-link-functions" class="section level3">
+<h3>3. Other link functions</h3>
+<p>Changing the likelihood often means changing the link function. The three most common inverse link functions are <code>exp</code>, <code>inv_logit</code>, <code>probit</code>, and <code>softmax</code>. All four terms could be approximated. Some likelihoods and parameters do not require a link function at all.</p>
+</div>
+<div id="regressions-on-multiple-parameters" class="section level3">
+<h3>4. Regressions on multiple parameters</h3>
+<p>We can have multiple linear models in one likelihood. For instance, we might predict both the mean and standard deviation of a normal distribution:</p>
+<pre><code>y ~ normal(intercept0 + X0 * beta0, exp(intercept1 + X1 * beta1));</code></pre>
+<p>Computationally, everything up until now is:</p>
 <ol style="list-style-type: decimal">
 <li>Linear model, expressed as a dense matrix vector multiply</li>
 <li>Link function</li>
 <li>Likelihood</li>
 </ol>
 </div>
-<div id="hierarchical-terms" class="section level2">
-<h2>Hierarchical terms</h2>
-<p>The only thing left to discuss are the hierarchical terms, of which there are two:</p>
-<p><code>(1 | group)</code> and <code>(x | state)</code></p>
-<p>Everything else is a variation on these.</p>
+</div>
+<div id="hierarchical-term-1-1-group" class="section level2">
+<h2>Hierarchical term 1: <code>(1 | group)</code></h2>
 <p>The term <code>(1 | group)</code> means add to the model an intercept that varies by what group the response belongs to. So we can expand the regression above to say that we expect the turnout to be different in every state:</p>
 <pre><code>turned_out ~ male + (1 | state)</code></pre>
 <p>This corresponds to the Stan model in <a href="somewhere">models/groups.stan</a>.</p>
@@ -544,8 +553,10 @@ curve(inv_logit, -5, 5)</code></pre>
 ##  9  -0.5         9         38    68
 ## 10  -0.5        10       1229  1909
 ## # … with 92 more rows</code></pre>
-<p>And now that we have states converted into integers <span class="math inline">\([1, 51]\)</span> we can run the Stan model:</p>
+<p>In this case the preparation is turning categorical variables (what state a group of responses belong to) into an integer so it can be used inside Stan.</p>
+<p>We can again run this model, but for simplicity we will skip this step:</p>
 <pre class="r"><code>model = cmdstan_model(&quot;models/groups.stan&quot;)
+
 fit = model$sample(data = list(N = nrow(df_groups),
                                M = df_groups$M,
                                S = max(df_groups$state_idx),
@@ -553,71 +564,59 @@ fit = model$sample(data = list(N = nrow(df_groups),
                                turned_out = df_groups$turned_out,
                                male = df_groups$male),
                    cores = 4)</code></pre>
-<pre class="r"><code>print(fit)</code></pre>
-<pre><code>##     variable      mean    median   sd  mad        q5       q95 rhat ess_bulk
-##  lp__        -29705.60 -29705.50 7.19 7.41 -29717.50 -29694.30 1.00      804
-##  intercept        0.25      0.25 0.69 0.68     -0.88      1.37 1.00     3417
-##  slope           -0.06     -0.06 0.02 0.02     -0.09     -0.02 1.00     6319
-##  states_mean      0.27      0.27 0.69 0.69     -0.85      1.40 1.00     3357
-##  states_sd        0.16      0.16 0.02 0.02      0.13      0.20 1.00     1068
-##  states[1]        0.12      0.13 0.69 0.69     -1.02      1.25 1.00     3397
-##  states[2]        0.30      0.29 0.70 0.70     -0.87      1.46 1.00     3385
-##  states[3]        0.43      0.44 0.69 0.69     -0.71      1.56 1.00     3409
-##  states[4]        0.41      0.41 0.70 0.70     -0.74      1.54 1.00     3387
-##  states[5]        0.10      0.10 0.69 0.68     -1.02      1.22 1.00     3406
-##  ess_tail
-##      1399
-##      2828
-##      2233
-##      2810
-##      1632
-##      2905
-##      2826
-##      2813
-##      2714
-##      2747
-## 
-##  # showing 10 of 56 rows (change via 'max_rows' argument)</code></pre>
-<p>Alright great, it fit. What did we learn?</p>
-<ol style="list-style-type: decimal">
-<li><p>The operations we added look like a sparse matrix vector multiply. Perhaps this is unsurprising, after all, it is a linear model we are evaluating. However the resemblance is not superficial.</p>
+<p>Again, there are some new computatinal aspects of this model worth paying attention to:</p>
+<div id="sparse-matrix-vector-multiply-formulation" class="section level3">
+<h3>1. Sparse matrix-vector multiply formulation</h3>
+<p>The operations we added look like a sparse matrix vector multiply. It may be unsurprising that this can be formulated as a sparse matrix vector multiply (this is a linear model, after all), but the resemblance is not superficial and worth being aware of. Sometimes the matrix vector formulation is convenient and sometimes now.</p>
 <p>The vectorized code in our Stan model was:</p>
 <pre><code>turned_out ~ binomial_logit(M, intercept + slope * male + states[state_idx]);</code></pre>
 <p>The term <code>states[state_idx]</code> expands to:</p>
-<pre><code>vector[N] output; // = states[state_idx]
+<pre><code>vector[N] linear_model = intercept + slope * male; // + states[state_idx]
 for(n in N) {
- output[n] = states[state_idx[n]];
+  linear_model[n] += states[state_idx[n]];
 }</code></pre>
-<p>So this means for the nth response, take the <code>state_idx[n]</code> th element of the vector <code>states</code>.</p>
+<p>This means for hierarchical part of the nth response, take the <code>state_idx[n]</code> th element of the vector <code>states</code>.</p>
 <p>We could construct a matrix <code>Z</code> that was <code>N</code> rows by <code>S</code> columns (there are <code>S</code> states) such that on the nth row the only nonzero was a one in the <code>state_idx[n]</code> th column. With this matrix, <code>states[state_idx] == Z * states</code>.</p>
 <p>The relationship is even closer if we look at a compressed-sparse-row format for the sparse matrix.</p>
-<p>So if <code>state_idx</code> and <code>states</code> are defined like this:</p>
+<p>If <code>state_idx</code> and <code>states</code> are defined like this:</p>
 <pre><code>state_idx = { 1, 2, 2, 4, ... }
 states = [ 1.1, 2.2, 3.3, 4.4, ... ]</code></pre>
 <p>The matrix <code>Z</code> looks like:</p>
 <pre><code>[ 1, 0, 0, 0, ..., 0,
- 0, 1, 0, 0, ..., 0,
- 0, 1, 0, 0, ..., 0,
- 0, 0, 0, 1, ..., 0 ]</code></pre>
-<p>And then the CSR format (using the notation of <a href="https://en.wikipedia.org/w/index.php?title=Sparse_matrix#Compressed_sparse_row_(CSR,_CRS_or_Yale_format)">Wikipedia</a> looks like:</p>
+  0, 1, 0, 0, ..., 0,
+  0, 1, 0, 0, ..., 0,
+  0, 0, 0, 1, ..., 0 ]</code></pre>
+<p>Then the CSR format of the matrix (using the notation of <a href="https://en.wikipedia.org/w/index.php?title=Sparse_matrix#Compressed_sparse_row_(CSR,_CRS_or_Yale_format)">Wikipedia</a> looks like:</p>
 <pre><code>V         = { 1.0, 1.0, 1.0, 1.0, ... }
 COL_INDEX = { 1, 2, 2, 4, ... }
 ROW_INDEX = [ 1, 2, 3, 4, ... ]</code></pre>
-<p>So the values are all ones since the values of the matrix are ones, the row index variable is extraneous since effectively there is only one non-zero in every row, and <code>COL_INDEX</code> is the same as <code>state_idx</code>.</p></li>
-<li><p>For every member of the group, we added one parameter. In this case, <code>S = 51</code> so that is 51 extra paramaters that need sent to the likelihood at every evaluation and 51 adjoints that need sent back in the reverse pass.</p>
+<p>The elements of <code>V</code> are all ones since the values of the matrix are ones, the row index variable is extraneous since effectively there is only one non-zero in every row, and <code>COL_INDEX</code> is the same as <code>state_idx</code>.</p>
+</div>
+<div id="a-g-element-group-adds-g-parameters" class="section level3">
+<h3>2. A G-element group adds G parameters</h3>
+<p>For every member of the group, we added one parameter. In this case, <code>S = 51</code> so that is 51 extra paramaters that need sent to the likelihood at every evaluation and 51 adjoints that need sent back in the reverse pass.</p>
 <p>For every group, we added two hyperparameters, <code>states_mean</code> and <code>states_sd</code>.</p>
-<p>Evaluating the prior is not nearly as expensive as the likelihood in GLMs, and this is not something that would need accelerated, so these add nothing to the complexity for the accelerator.</p></li>
-<li><p><code>states_idx</code> only needs copied to the accelerator once.</p></li>
-<li><p>The for loop version of this is actually pretty readable:</p>
+<p>Evaluating the prior is not nearly as expensive as the likelihood in GLMs, and this is not something that would need accelerated, so these add nothing to the complexity for the accelerator.</p>
+</div>
+<div id="indexes-are-static-data" class="section level3">
+<h3>3. Indexes are static data</h3>
+<p><code>states_idx</code> only needs copied to the accelerator once.</p>
+</div>
+<div id="for-loop-variation" class="section level3">
+<h3>4. For loop variation</h3>
+<p>The for loop version of this is actually pretty readable:</p>
 <pre><code>for(n in 1:N) {
- turned_out[n] ~ binomial_logit(M[n], intercept + slope * male[n] + states[state_idx[n]]);
+  turned_out[n] ~ binomial_logit(M[n], intercept + slope * male[n] + states[state_idx[n]]);
 }</code></pre>
-<p>Nothing much to say, other than that’s what it looks like. It is not dissimilar from the indexing you’d find in a statistics paper.</p></li>
-</ol>
-<p>Alright, now it is time to describe the last variation on hierarchical parameters, <code>(x | group)</code>. As <code>(1 | group)</code> is a group level intercept, <code>(x | group)</code> is a group level slope. In our case, we might be interested in the regression:</p>
+<p>Nothing much to say, other than that’s what it looks like. It is not dissimilar from the indexing you’d find in a statistics paper.</p>
+</div>
+</div>
+<div id="hierarchical-term-2-x-state" class="section level2">
+<h2>Hierarchical term 2: <code>(x | state)</code></h2>
+<p>Now it is time to describe the last variation on hierarchical parameters, <code>(x | group)</code>. As <code>(1 | group)</code> is a group level intercept, <code>(x | group)</code> is a group level slope. In our case, we might be interested in the regression:</p>
 <pre><code>turned_out ~ male + (1 + male | state)</code></pre>
-<p>What this means is we get an extra per-state slope coefficient for the covariate <code>male</code>.</p>
-<p>The Stan code for this is given in <a href="somewhere">models/groups_slopes.stan</a>. The data for the last fit will work for this one as well.</p>
+<p>What this means is we get an extra per-state slope coefficient for the covariate <code>male</code> (which is like the coefficient of <code>male</code> is changing in every state).</p>
+<p>The Stan code for this is given in <a href="somewhere">models/groups_slopes.stan</a>. The data for the last fit will work for this one as well. Running the model looks much the same:</p>
 <pre class="r"><code>model = cmdstan_model(&quot;models/groups_slopes.stan&quot;)
 fit = model$sample(data = list(N = nrow(df_groups),
                                M = df_groups$M,
@@ -626,54 +625,36 @@ fit = model$sample(data = list(N = nrow(df_groups),
                                turned_out = df_groups$turned_out,
                                male = df_groups$male),
                    cores = 4)</code></pre>
-<pre class="r"><code>print(fit)</code></pre>
-<pre><code>##                variable      mean    median   sd   mad        q5       q95 rhat
-##  lp__                   -29717.95 -29717.75 9.93 10.01 -29734.80 -29702.20 1.00
-##  intercept                   0.28      0.28 0.71  0.70     -0.89      1.46 1.00
-##  slope                      -0.02     -0.01 0.73  0.73     -1.24      1.20 1.00
-##  states_intercepts_mean      0.25      0.25 0.71  0.69     -0.93      1.41 1.00
-##  states_intercepts_sd        0.16      0.16 0.02  0.02      0.13      0.20 1.00
-##  states_slopes_mean         -0.03     -0.05 0.73  0.73     -1.25      1.20 1.00
-##  states_slopes_sd            0.12      0.11 0.03  0.03      0.07      0.17 1.00
-##  states_intercepts[1]        0.10      0.09 0.71  0.70     -1.09      1.28 1.00
-##  states_intercepts[2]        0.28      0.27 0.72  0.72     -0.90      1.47 1.00
-##  states_intercepts[3]        0.40      0.40 0.71  0.71     -0.80      1.57 1.00
-##  ess_bulk ess_tail
-##      1003     2007
-##      5218     2994
-##      4860     2897
-##      5234     2971
-##      1424     2368
-##      4864     2770
-##      1670     2595
-##      5266     2885
-##      5305     2830
-##      5218     2995
-## 
-##  # showing 10 of 109 rows (change via 'max_rows' argument)</code></pre>
-<p>Alright great, it ran hopefully it converged to something.</p>
-<ol style="list-style-type: decimal">
-<li><p>This can again be written as a sparse matrix multiply, but now the <code>Z</code> matrix has values that are not just ones.</p>
+<p>Again, there are lessons:</p>
+<div id="sparse-matrix-vector-formulation" class="section level3">
+<h3>1. Sparse matrix-vector formulation</h3>
+<p>This can again be written as a sparse matrix vector multiply, but now the <code>Z</code> matrix has values that are not just ones.</p>
 <p>If <code>state_idx</code>, <code>states_slopes</code>, and <code>male</code> are defined like this:</p>
 <pre><code>state_idx = { 1, 2, 2, 4, ... }
 states = [ 1.1, 2.2, 3.3, 4.4, ... ]
 male = [-0.5, 0.5, 0.5, -0.5, ... ]</code></pre>
 <p>The matrix <code>Z</code> looks like:</p>
 <pre><code>[ -0.5,    0,    0,    0, ...,    0,
-  0,  0.5,    0,    0, ...,    0,
-  0,  0.5,    0,    0, ...,    0,
-  0,    0,    0, -0.5, ...,    0 ]</code></pre>
-<p>And then the CSR format (using the notation of <a href="https://en.wikipedia.org/w/index.php?title=Sparse_matrix#Compressed_sparse_row_(CSR,_CRS_or_Yale_format)">Wikipedia</a> looks like:</p>
+     0,  0.5,    0,    0, ...,    0,
+     0,  0.5,    0,    0, ...,    0,
+     0,    0,    0, -0.5, ...,    0 ]</code></pre>
+<p>The CSR format (using the notation of <a href="https://en.wikipedia.org/w/index.php?title=Sparse_matrix#Compressed_sparse_row_(CSR,_CRS_or_Yale_format)">Wikipedia</a> looks like:</p>
 <pre><code>V         = { -0.5, 0.5, 0.5, -0.5, ... }
 COL_INDEX = { 1, 2, 2, 4, ... }
-ROW_INDEX = [ 1, 2, 3, 4, ... ]</code></pre></li>
-<li><p>Again this term added <code>S = 51</code> parameters that need passed to the likelihood and two hyperparameters that do not need passed in.</p></li>
-<li><p>Because the slope indexes using the same index as the state, nothing extra needs copied to the accelerator. In fact, this means that the indexing defined by the sparse matrix vector multiply will be less memory efficient than that defined by the for loop (the for loop knows to use the same index for both the slope and the intercept terms whereas the sparse matrix format would have separate indices for these).</p></li>
-</ol>
+ROW_INDEX = [ 1, 2, 3, 4, ... ]</code></pre>
 </div>
-<div id="getting-slow" class="section level2">
-<h2>Getting slow</h2>
-<p>As much as those models ran quickly, it is very easy to write an expanded model that runs slowly using <code>brms</code>. This is a model I had sitting around in a repository on my computer. I don’t know if it makes sense. I do know it runs slowly. Until we can make these things run quickly, it will not be easy for people to really genuinely work out what to model. It is an iterative thing.</p>
+<div id="new-parameters" class="section level3">
+<h3>2. New parameters</h3>
+<p>Again this term added <code>S = 51</code> parameters that need passed to the likelihood and two hyperparameters that do not need passed in.</p>
+</div>
+<div id="repeat-indices-can-be-re-used" class="section level3">
+<h3>3. Repeat indices can be re-used</h3>
+<p>Because the slope indexes using the same index as the state, nothing extra needs copied to the accelerator. In fact, this means that the indexing defined by the sparse matrix vector multiply will be less memory efficient than that defined by the for loop because the for loop knows to use the same index for both the slope and the intercept terms whereas the sparse matrix format would have separate indices for these.</p>
+</div>
+</div>
+<div id="scaling-up" class="section level2">
+<h2>Scaling up</h2>
+<p>As much as those models will run quickly, it is very easy to write an expanded model that runs slowly. This is a model one author had sitting in a Github repository. It is not clear it makes sense. What is clear is that the model runs slowly enough that it would be annoying to try to figure out if it made sense.</p>
 <pre class="r"><code>fit = brm(turned_out | trials(M) ~ male +
             (1 | state) + (1 | race) + (1 | educ) + (1 | age) + (1 | marstat) +
             (male - 1 | state) + (male - 1 | race) + (male - 1 | educ) + (male - 1 | age) + (male - 1 | marstat) +
@@ -688,8 +669,8 @@ ROW_INDEX = [ 1, 2, 3, 4, ... ]</code></pre></li>
           prior = set_prior(&quot;normal(0, 1)&quot;, class = &quot;b&quot;) +
             set_prior(&quot;normal(0, 1)&quot;, class = &quot;Intercept&quot;) +
             set_prior(&quot;normal(0, 1)&quot;, class = &quot;sd&quot;))</code></pre>
-<p>This took about four minutes to run 100 iterations on my computer. That’s a start, but in reality we’ll probably need to take a couple thousand draws from our posterior. That is not a hard and fast rule, but 1000 draws is a good number to keep in mine.</p>
-<p>This means that this model would take about thirty minutes to run, which is not that bad, but keep in mind:</p>
+<p>Running 100 iterations again took about four minutes on my computer. By default Stan spends a thousand iterations in warmup and a thousand sampling so, a very rough estimate for running this model is about thirty minutes.</p>
+<p>This might not seem that bad, but keep in mind it is very easy multiply this thirty minutes into something that is bad.</p>
 <ol style="list-style-type: decimal">
 <li><p>This is one model of the 2016 election. To think about modeling this, we will need to run many models iteratively.</p></li>
 <li><p>If we wanted to add more years to this, perhaps the 2008 or 2012 elections, then we could easily make the model two or three times bigger.</p></li>
@@ -697,22 +678,35 @@ ROW_INDEX = [ 1, 2, 3, 4, ... ]</code></pre></li>
 <li><p>If we wanted to model another survey on top of the CCES, we could again double the size of the regression.</p></li>
 <li><p>If we wanted to understand not just presidential preference, but also congressional preferences, we could easily double the size of the model.</p></li>
 </ol>
-<p>Anyway the point is that it is easy to grow this.</p>
+<p>The point is that it is easy to grow this.</p>
 </div>
-<div id="constraints" class="section level2">
-<h2>Constraints</h2>
+<div id="problem-scaling" class="section level2">
+<h2>Problem scaling</h2>
 <p>To make it easier to think about the problem, let’s talk about problem scales.</p>
 <p>So if we think about the linear model in terms of a dense matrix vector product and a sparse matrix vector product, we have Stan code that looks like:</p>
 <pre><code>turned_out ~ binom(M, intercept + X * beta + Z * gamma)</code></pre>
-<ol style="list-style-type: decimal">
-<li><p>For <code>N</code> responses <code>y</code>, <code>X</code> is dense matrix of size <code>N</code> by <code>K</code> for <code>K</code> covariates, and <code>Z</code> is a sparse matrix of size <code>N</code> by <code>L</code> for <code>L</code> hierarchical terms.</p>
-<p>In this case <code>N</code> is 7851, <code>K</code> is 1, and <code>L</code> is about 233. You can compute <code>L</code> by knowing how many members of each group there are and looking at the hierarchical terms. Here there are 51 states, 4 race categories, 5 education levels, 4 age groups, and 3 marital statuses.</p></li>
-<li><p>In this regression, the intercept (scalar), <code>beta</code> (vector of length <code>K</code>), and <code>gamma</code> (vector of length <code>L</code>), would need sent to the accelerator in the forward pass and then the adjoints of these (which are the same size as the variables themselves) sent back from the accelerator in the reverse pass. So that is 235 doubles in and out for the entire likelihood calculation (<code>1 + K + L</code>).</p></li>
-<li><p>You have <code>N</code> integer responses and group sizes, you need to index into five groups, and you have one continuous covariate. This means that for static data that only needs shipped once there are <code>2 * N + 5 * N</code> integers and N real values. If we assume 64bit integers and reals, then that is <code>62808 * 8</code> bytes of data.</p></li>
-<li><p>The G-man philosophy is with big data comes big models, so we expect the number of parameters to grow as the data grows. The philosophy is if you have more data, you know more about your problem, and you should do more to model it.</p>
-<p>I think realistically <code>N</code> and <code>L</code> are the parameters that scale though. I do not expect <code>K</code> to scale in the same way. I’m making this argument because the dense matrix vector terms usually correspond to population level things. As you add more data, you add complexity in the groupings, and so that is where I expect the model to get more complicated. The population itself will probably remain relatively small. I may regret saying this but I want to emphasize the importance of the sparse matrix vector term.</p>
-<p>The bleeding edge of Stan models fit now would be <code>N</code> around a million and <code>L</code> in the upper tens of thousands.</p></li>
-<li><p>matrix-vector multiplies are always memory bound be they sparse or dense.</p>
+<div id="key-dimenions-n-k-l" class="section level3">
+<h3>1. Key dimenions (N, K, L)</h3>
+<p>For <code>N</code> responses <code>y</code>, <code>X</code> is dense matrix of size <code>N</code> by <code>K</code> for <code>K</code> covariates, and <code>Z</code> is a sparse matrix of size <code>N</code> by <code>L</code> for <code>L</code> hierarchical terms.</p>
+<p>In this case <code>N</code> is 7851, <code>K</code> is 1, and <code>L</code> is about 233. You can compute <code>L</code> by knowing how many members of each group there are and looking at the hierarchical terms. Here there are 51 states, 4 race categories, 5 education levels, 4 age groups, and 3 marital statuses.</p>
+</div>
+<div id="number-of-parameters" class="section level3">
+<h3>2. Number of parameters</h3>
+<p>In this regression, the intercept (scalar), <code>beta</code> (vector of length <code>K</code>), and <code>gamma</code> (vector of length <code>L</code>), would need sent to the accelerator in the forward pass and then the adjoints of these (which are the same size as the variables themselves) sent back from the accelerator in the reverse pass. So that is 235 doubles in and out for the entire likelihood calculation (<code>1 + K + L</code>).</p>
+</div>
+<div id="amount-of-data" class="section level3">
+<h3>3. Amount of data</h3>
+<p>You have <code>N</code> integer responses and group sizes, you need to index into five groups, and you have one continuous covariate. This means that for static data that only needs shipped once there are <code>2 * N + 5 * N</code> integers and N real values. If we assume 64bit integers and reals, then that is <code>62808 * 8</code> bytes of data.</p>
+</div>
+<div id="l-scales-with-n-k-not-so-much" class="section level3">
+<h3>4. L scales with N, K not so much</h3>
+<p>The G-man philosophy is with big data comes big models, so we expect the number of parameters to grow as the data grows. The philosophy is if you have more data, you know more about your problem, and you should do more to model it.</p>
+<p>Realistically <code>N</code> and <code>L</code> are the parameters that scale. <code>K</code> will not scale in the same way. The logic for this argument is the dense matrix vector terms usually corresponds to population level things. More data adds more complexity to the finer details of the models, the groupings, etc. The population itself will not necessarily change.</p>
+<p>The bleeding edge of Stan models fit now would be <code>N</code> around a million and <code>L</code> in the upper tens of thousands.</p>
+</div>
+<div id="everything-is-memory-bound" class="section level3">
+<h3>5. Everything is memory bound</h3>
+<p>matrix-vector multiplies are always memory bound be they sparse or dense.</p>
 <p>The only way to make this more efficient (other than getting faster memory) is to switch the matrix-vector multiply into a matrix matrix multiply.</p>
 <p>Any time we do MCMC we need to run multiple chains. Every chain has the same data but different parameters. Assume we are effectively evaluating:</p>
 <pre><code>turned_out ~ binomial(M, intercept1 + X * beta1 + Z * gamma1)
@@ -721,12 +715,15 @@ turned_out ~ binomial(M, intercept3 + X * beta3 + Z * gamma3)
 turned_out ~ binomial(M, intercept4 + X * beta4 + Z * gamma4)</code></pre>
 <p>By sticking the <code>beta</code> and <code>gamma</code> vectors together, we can compute these likelihoods together as matrix matrix products. That is first compute:</p>
 <pre><code>X * [beta1, beta2, beta3, beta4] + Z * [gamma1, gamma2, gamma3, gamma4]</code></pre>
-<p>in a combined way and then redistribute the values to their separate chains.</p></li>
-<li><p>I’m going to make some really big assumptions here to give you some idea of the ideal timings on all these calculations.</p>
+<p>in a combined way and then redistribute the values to their separate chains.</p>
+</div>
+<div id="how-much-time-we-have" class="section level3">
+<h3>6. How much time we have</h3>
+<p>This will take some very large assumptions, but let us come up with some specific timing numbers to really nail down what needs to happen.</p>
 <p>The default algorithm in Stan is a variant of HMC. If it is operating fairly efficiently, then we probably need somewhere between a thousand and two thousand draws (Stan’s default is 2000) in a few chains (Stan’s default is four). For each HMC draw we probably need somewhere between 100 to 300 gradient evaluations (Stan defaults to 1 to 1023).</p>
 <p>To iterate very quickly on a model, it would be nice to do a full inference in a couple minutes. Ten is fine. Once models take thirty minutes or an hour or ten hours, they start to change workflow in an undesirable way. Obviously there will always be calculations that take hours, but it would be nice if we really moved the need on what is possible in a few minutes.</p>
-<p>So if we need to evaluate 200 * 2000 gradients in 120 seconds, that implies 300 microseconds per gradient evaluation if the accelerator is serving one chain. Again, the I/O requirements are <code>O(K + L)</code> doubles in on the forward pass and the same number of doubles out on the backward pass.</p></li>
-</ol>
+<p>If we need to evaluate 200 * 2000 gradients in 120 seconds, that implies 300 microseconds per gradient evaluation if the accelerator is serving one chain. Again, the I/O requirements are <code>O(K + L)</code> doubles in on the forward pass and the same number of doubles out on the backward pass. Memory requirements are that for an <code>N</code> by <code>K</code> matrix vector multiply and an <code>N</code> by <code>L</code> sparse matrix vector multiply. Computational requirements are the multiplies as well as the extra calculations for the link functions and the likelihoods.</p>
+</div>
 </div>
 
 

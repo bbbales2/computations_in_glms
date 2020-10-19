@@ -1656,13 +1656,13 @@ div.tocify {
 <div class="sourceCode" id="cb11"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb11-1" data-line-number="1"><span class="kw">print</span>(fit)</a></code></pre></div>
 <pre><code>## Warning: NAs introduced by coercion</code></pre>
 <pre><code>##   variable      mean    median   sd  mad        q5       q95 rhat ess_bulk
-##  lp__      -29806.01 -29805.70 1.05 0.74 -29808.20 -29805.00 1.00     1905
-##  intercept      0.53      0.53 0.01 0.01      0.51      0.54 1.00     3893
-##  slope         -0.07     -0.07 0.02 0.02     -0.10     -0.04 1.00     2998
+##  lp__      -29805.99 -29805.70 1.03 0.74 -29808.01 -29805.00 1.00     1956
+##  intercept      0.53      0.53 0.01 0.01      0.51      0.54 1.00     3348
+##  slope         -0.07     -0.07 0.02 0.02     -0.10     -0.04 1.00     2808
 ##  ess_tail
 ##        NA
-##      2521
-##      2187</code></pre>
+##      2639
+##      2369</code></pre>
 <p>Alright, great, that model fit. Now before we move on, let’s discuss the computational aspects of this model.</p>
 <div id="computation" class="section level2">
 <h2><span class="header-section-number">3.1</span> Computation</h2>
@@ -1921,7 +1921,7 @@ ROW_INDEX = [ 1, 2, 3, 4, ... ]</code></pre>
 </div>
 <div id="l-scales-with-n-k-not-so-much" class="section level2">
 <h2><span class="header-section-number">8.4</span> L scales with N; K not so much</h2>
-<p>The G-man philosophy is with big data comes big models, so we expect the number of parameters to grow as the data grows. The philosophy is if you have more data, you know more about your problem, and you should do more to model it.</p>
+<p>The Stan philosophy is with big data comes big models, so we expect the number of parameters to grow as the data grows. The philosophy is if you have more data, you know more about your problem, and you should do more to model it.</p>
 <p>Realistically <code>N</code> and <code>L</code> are the parameters that scale. <code>K</code> will not scale in the same way. The logic for this argument is the dense matrix vector terms usually corresponds to population level things. More data adds more complexity to the finer details of the models, the groupings, etc. The population itself will not necessarily change.</p>
 <p>The bleeding edge of Stan models fit now would be <code>N</code> around a million and <code>L</code> in the upper tens of thousands.</p>
 </div>

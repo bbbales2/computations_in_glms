@@ -568,7 +568,7 @@ bytes of data.
 
 ## L scales with N; K not so much
 
-The G-man philosophy is with big data comes big models, so we expect the
+The Stan philosophy is with big data comes big models, so we expect the
 number of parameters to grow as the data grows. The philosophy is if you have
 more data, you know more about your problem, and you should do more to model
 it.

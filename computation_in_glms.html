@@ -1606,23 +1606,22 @@ div.tocify {
 ##   race = col_character(),
 ##   educ = col_character(),
 ##   age = col_character(),
-##   marstat = col_character(),
-##   N = col_double()
+##   marstat = col_character()
 ## )</code></pre>
 <div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb3-1" data-line-number="1"><span class="kw">print</span>(df)</a></code></pre></div>
-<pre><code>## # A tibble: 7,851 x 9
-##    turned_out     M  male state        race  educ          age   marstat     N
-##         &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt; &lt;chr&gt;        &lt;chr&gt; &lt;chr&gt;         &lt;chr&gt; &lt;chr&gt;   &lt;dbl&gt;
-##  1        133   170  -0.5 florida      white some_or_assoc 45-64 married   170
-##  2        116   156  -0.5 pennsylvania white HS            45-64 married   156
-##  3         98   132   0.5 california   white some_or_assoc 45-64 married   132
-##  4         95   130   0.5 florida      white some_or_assoc 45-64 married   130
-##  5         91   122  -0.5 ohio         white HS            45-64 married   122
-##  6         76   122   0.5 california   white bach          45-64 married   122
-##  7         87   120  -0.5 california   white some_or_assoc 45-64 married   120
-##  8         79   117   0.5 texas        white some_or_assoc 45-64 married   117
-##  9         77   115  -0.5 florida      white HS            45-64 married   115
-## 10         84   114  -0.5 pennsylvania white some_or_assoc 45-64 married   114
+<pre><code>## # A tibble: 7,851 x 8
+##    turned_out     M  male state        race  educ          age   marstat
+##         &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt; &lt;chr&gt;        &lt;chr&gt; &lt;chr&gt;         &lt;chr&gt; &lt;chr&gt;  
+##  1        133   170  -0.5 florida      white some_or_assoc 45-64 married
+##  2        116   156  -0.5 pennsylvania white HS            45-64 married
+##  3         98   132   0.5 california   white some_or_assoc 45-64 married
+##  4         95   130   0.5 florida      white some_or_assoc 45-64 married
+##  5         91   122  -0.5 ohio         white HS            45-64 married
+##  6         76   122   0.5 california   white bach          45-64 married
+##  7         87   120  -0.5 california   white some_or_assoc 45-64 married
+##  8         79   117   0.5 texas        white some_or_assoc 45-64 married
+##  9         77   115  -0.5 florida      white HS            45-64 married
+## 10         84   114  -0.5 pennsylvania white some_or_assoc 45-64 married
 ## # … with 7,841 more rows</code></pre>
 <p>Each row in this dataset is information about how many people in different demographic groups turned out for the 2016 election. The leftmost variable <code>turned_out</code> is the actual response variable, so on the first line 133 out of 170 surveyed female, Floridian, white voters aged 45-64, etc. etc. turned out to vote.</p>
 <p>What we do with data like this is estimate in each of these groups what the reported turnout in the survey group was, look at census data to figure out how many people are in these groups actually exist, and then estimate what the 2016 turnout (and do all sorts of follow up analysis with this).</p>
@@ -1657,13 +1656,13 @@ div.tocify {
 <div class="sourceCode" id="cb11"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb11-1" data-line-number="1"><span class="kw">print</span>(fit)</a></code></pre></div>
 <pre><code>## Warning: NAs introduced by coercion</code></pre>
 <pre><code>##   variable      mean    median   sd  mad        q5       q95 rhat ess_bulk
-##  lp__      -29805.95 -29805.60 1.00 0.59 -29807.90 -29805.00 1.00     1531
-##  intercept      0.53      0.53 0.01 0.01      0.51      0.54 1.00     3153
-##  slope         -0.07     -0.07 0.02 0.02     -0.10     -0.04 1.00     2702
+##  lp__      -29805.93 -29805.60 0.97 0.59 -29807.90 -29805.00 1.00     1589
+##  intercept      0.53      0.53 0.01 0.01      0.51      0.54 1.00     3533
+##  slope         -0.07     -0.07 0.02 0.02     -0.10     -0.04 1.00     3175
 ##  ess_tail
 ##        NA
-##      2416
-##      2265</code></pre>
+##      2469
+##      2423</code></pre>
 <p>Alright, great, that model fit. Now before we move on, let’s discuss the computational aspects of this model.</p>
 <div id="computation" class="section level2">
 <h2><span class="header-section-number">3.1</span> 1. Computation</h2>

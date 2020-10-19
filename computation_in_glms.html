@@ -1656,21 +1656,21 @@ div.tocify {
 <div class="sourceCode" id="cb11"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb11-1" data-line-number="1"><span class="kw">print</span>(fit)</a></code></pre></div>
 <pre><code>## Warning: NAs introduced by coercion</code></pre>
 <pre><code>##   variable      mean    median   sd  mad        q5       q95 rhat ess_bulk
-##  lp__      -29805.93 -29805.60 0.97 0.59 -29807.90 -29805.00 1.00     1589
-##  intercept      0.53      0.53 0.01 0.01      0.51      0.54 1.00     3533
-##  slope         -0.07     -0.07 0.02 0.02     -0.10     -0.04 1.00     3175
+##  lp__      -29806.01 -29805.70 1.05 0.74 -29808.20 -29805.00 1.00     1905
+##  intercept      0.53      0.53 0.01 0.01      0.51      0.54 1.00     3893
+##  slope         -0.07     -0.07 0.02 0.02     -0.10     -0.04 1.00     2998
 ##  ess_tail
 ##        NA
-##      2469
-##      2423</code></pre>
+##      2521
+##      2187</code></pre>
 <p>Alright, great, that model fit. Now before we move on, let’s discuss the computational aspects of this model.</p>
 <div id="computation" class="section level2">
-<h2><span class="header-section-number">3.1</span> 1. Computation</h2>
+<h2><span class="header-section-number">3.1</span> Computation</h2>
 <p>The big work is all done in the model block:</p>
 <pre><code>turned_out ~ binomial_logit(M, intercept + slope * male);</code></pre>
 </div>
 <div id="implicit-parameters" class="section level2">
-<h2><span class="header-section-number">3.2</span> 2. Implicit parameters</h2>
+<h2><span class="header-section-number">3.2</span> Implicit parameters</h2>
 <p>There is an <code>intercept</code> and <code>slope</code> weren’t part of the regression version of the problem.</p>
 <p>Traditionaly R regression syntax does not define the parameters. They are implicitly defined by what covariates are included on the right hand side.</p>
 <p><code>male</code> is a covariate, and so it gets a coefficient. If the intercept is not specified, it is assumed to be there.</p>
@@ -1678,14 +1678,14 @@ div.tocify {
 <p><code>turned_out ~ -1 + male</code> is a way of saying do not include the intercept.</p>
 </div>
 <div id="vectorization" class="section level2">
-<h2><span class="header-section-number">3.3</span> 3. Vectorization</h2>
+<h2><span class="header-section-number">3.3</span> Vectorization</h2>
 <p>This is a vectorized statement. It is equivalent to:</p>
 <pre><code>for(n in 1:N) {
   turned_out[n] ~ binomial_logit(M[n], intercept + slope * male[n]);
 }</code></pre>
 </div>
 <div id="the-model-block-is-a-function-from-rp-rightarrow-r" class="section level2">
-<h2><span class="header-section-number">3.4</span> 4. The model block is a function from <span class="math inline">\(R^P \rightarrow R\)</span></h2>
+<h2><span class="header-section-number">3.4</span> The model block is a function from <span class="math inline">\(R^P \rightarrow R\)</span></h2>
 <p>The model block in Stan represents a function which returns a single scalar, the log density of the model. You don’t see the log density increments because they are hidden behind <code>~</code> syntactic sugar. The log density is actually called <code>target</code> in Stan, and the previous loop is equivalent up to a constant of proportionality to:</p>
 <pre><code>for(n in 1:N) {
   target += binomial_logit(turned_out[n] | M[n], intercept + slope * male[n]);
@@ -1694,7 +1694,7 @@ div.tocify {
 <p>A Stan model is a Bayesian log density. This means it is a function mapping <code>P</code> parameters to a scalar output (the log density). This is why we do reverse mode autodiff – it is most efficient when there is only one output but many inputs.</p>
 </div>
 <div id="link-functions" class="section level2">
-<h2><span class="header-section-number">3.5</span> 5. Link functions</h2>
+<h2><span class="header-section-number">3.5</span> Link functions</h2>
 <p>The distribution in the code is <code>binomial_logit</code>, not <code>binomial</code>. This is because the linear part of the model, <code>intercept + slope * male</code>, is unconstrained. <code>male</code> is either -0.5 (female) or 0.5 (male), but <code>slope</code> and `intercept can be anything, and so can the total. To map this unconstrained value to a constrained value, we use the inverse logit function.</p>
 <p>For convenience, here is a reminder plot of inverse logit:</p>
 <div class="sourceCode" id="cb17"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb17-1" data-line-number="1">inv_logit =<span class="st"> </span><span class="cf">function</span>(x) { <span class="dv">1</span> <span class="op">/</span><span class="st"> </span>(<span class="dv">1</span> <span class="op">+</span><span class="st"> </span><span class="kw">exp</span>(<span class="op">-</span>x)) }</a>
@@ -1704,7 +1704,7 @@ div.tocify {
 <p>We use <code>inv_logit</code> for convenience. Something else, or a low precision approximation, would probably be fine.</p>
 </div>
 <div id="data-is-static" class="section level2">
-<h2><span class="header-section-number">3.6</span> 6. Data is static</h2>
+<h2><span class="header-section-number">3.6</span> Data is static</h2>
 <p>The largest pieces of data do not change from model evaluation to model evaluation. What changes are the parameters.</p>
 <p>This means the length <code>N</code> array of integers <code>M</code> does not change, the length <code>N</code> array of responses do not change, and the length <code>N</code> covariate <code>male</code> does not change. This means these things can be communicated once to every device involved in the computation and never need sent again.</p>
 <p>If we look at the likelihood calculation as a whole, even though it is the majority of the work, only two doubles (<code>intercept</code> and <code>slope</code>) need shipped to the accerator during the forward pass and one double (<code>target</code>) returned. On the backwards pass, two doubles (the adjoints of <code>intercept</code> and <code>slope</code>) need shipped back from the accelerator.</p>
@@ -1714,7 +1714,7 @@ div.tocify {
 <h1><span class="header-section-number">4</span> Common modifications</h1>
 <p>There are a few modifications to make to this model.</p>
 <div id="matrix-vector-multiply-formulation" class="section level2">
-<h2><span class="header-section-number">4.1</span> 1. Matrix-vector multiply formulation</h2>
+<h2><span class="header-section-number">4.1</span> Matrix-vector multiply formulation</h2>
 <p>We can add more covariates like <code>male</code>, and for each one there will be an additional parameter. Pretend we have another vector <code>income</code> which is a continuous variable representing the average income of a group. There would be an additional parameter <code>slope2</code> to go along with this. Something like:</p>
 <pre><code>turned_out ~ binomial_logit(M, intercept + slope1 * male + slope2 * income);</code></pre>
 <p>We can join the two vectors <code>male</code> and <code>income</code> into a single matrix <code>X</code>, and then combine <code>slope1</code> and <code>slope2</code> into a single vector <code>beta</code>, and the regression now looks like:</p>
@@ -1722,7 +1722,7 @@ div.tocify {
 <p>where <code>X</code> is an <code>N</code> by <code>K</code> design matrix of covariates and <code>beta</code> is a length <code>K</code> vector of parameters. Usually the non-hierarchical/population level terms are though of computationally as a matrix-vector multiply for this reason.</p>
 </div>
 <div id="other-likelihoods" class="section level2">
-<h2><span class="header-section-number">4.2</span> 2. Other likelihoods</h2>
+<h2><span class="header-section-number">4.2</span> Other likelihoods</h2>
 <p>We can change the likelihood to something else. There are a lot of options.</p>
 <p>We might have a normal:</p>
 <pre><code>y ~ normal(intercept + X * beta, sigma);</code></pre>
@@ -1731,11 +1731,11 @@ div.tocify {
 <p>There are many more families supported in <code>brms</code>, which is probably a good reference on the things we should be concerned about implementing: <a href="https://cran.r-project.org/web/packages/brms/vignettes/brms_families.html" class="uri">https://cran.r-project.org/web/packages/brms/vignettes/brms_families.html</a></p>
 </div>
 <div id="other-link-functions" class="section level2">
-<h2><span class="header-section-number">4.3</span> 3. Other link functions</h2>
+<h2><span class="header-section-number">4.3</span> Other link functions</h2>
 <p>Changing the likelihood often means changing the link function. The three most common inverse link functions are <code>exp</code>, <code>inv_logit</code>, <code>probit</code>, and <code>softmax</code>. All four terms could be approximated. Some likelihoods and parameters do not require a link function at all.</p>
 </div>
 <div id="regressions-on-multiple-parameters" class="section level2">
-<h2><span class="header-section-number">4.4</span> 4. Regressions on multiple parameters</h2>
+<h2><span class="header-section-number">4.4</span> Regressions on multiple parameters</h2>
 <p>We can have multiple linear models in one likelihood. For instance, we might predict both the mean and standard deviation of a normal distribution:</p>
 <pre><code>y ~ normal(intercept0 + X0 * beta0, exp(intercept1 + X1 * beta1));</code></pre>
 <p>Computationally, everything up until now is:</p>
@@ -1787,7 +1787,7 @@ div.tocify {
 <a class="sourceLine" id="cb28-9" data-line-number="9">                   <span class="dt">cores =</span> <span class="dv">4</span>)</a></code></pre></div>
 <p>Again, there are some new computatinal aspects of this model worth paying attention to:</p>
 <div id="sparse-matrix-vector-multiply-formulation" class="section level2">
-<h2><span class="header-section-number">5.1</span> 1. Sparse matrix-vector multiply formulation</h2>
+<h2><span class="header-section-number">5.1</span> Sparse matrix-vector multiply formulation</h2>
 <p>The operations we added look like a sparse matrix vector multiply. It may be unsurprising that this can be formulated as a sparse matrix vector multiply (this is a linear model, after all), but the resemblance is not superficial and worth being aware of. Sometimes the matrix vector formulation is convenient and sometimes now.</p>
 <p>The vectorized code in our Stan model was:</p>
 <pre><code>turned_out ~ binomial_logit(M, intercept + slope * male + states[state_idx]);</code></pre>
@@ -1814,17 +1814,17 @@ ROW_INDEX = [ 1, 2, 3, 4, ... ]</code></pre>
 <p>The elements of <code>V</code> are all ones since the values of the matrix are ones, the row index variable is extraneous since effectively there is only one non-zero in every row, and <code>COL_INDEX</code> is the same as <code>state_idx</code>.</p>
 </div>
 <div id="a-g-element-group-adds-g-parameters" class="section level2">
-<h2><span class="header-section-number">5.2</span> 2. A G-element group adds G parameters</h2>
+<h2><span class="header-section-number">5.2</span> A G-element group adds G parameters</h2>
 <p>For every member of the group, we added one parameter. In this case, <code>S = 51</code> so that is 51 extra paramaters that need sent to the likelihood at every evaluation and 51 adjoints that need sent back in the reverse pass.</p>
 <p>For every group, we added two hyperparameters, <code>states_mean</code> and <code>states_sd</code>.</p>
 <p>Evaluating the prior is not nearly as expensive as the likelihood in GLMs, and this is not something that would need accelerated, so these add nothing to the complexity for the accelerator.</p>
 </div>
 <div id="indexes-are-static-data" class="section level2">
-<h2><span class="header-section-number">5.3</span> 3. Indexes are static data</h2>
+<h2><span class="header-section-number">5.3</span> Indexes are static data</h2>
 <p><code>states_idx</code> only needs copied to the accelerator once.</p>
 </div>
 <div id="for-loop-variation" class="section level2">
-<h2><span class="header-section-number">5.4</span> 4. For loop variation</h2>
+<h2><span class="header-section-number">5.4</span> For loop variation</h2>
 <p>The for loop version of this is actually pretty readable:</p>
 <pre><code>for(n in 1:N) {
   turned_out[n] ~ binomial_logit(M[n], intercept + slope * male[n] + states[state_idx[n]]);
@@ -1848,7 +1848,7 @@ ROW_INDEX = [ 1, 2, 3, 4, ... ]</code></pre>
 <a class="sourceLine" id="cb36-8" data-line-number="8">                   <span class="dt">cores =</span> <span class="dv">4</span>)</a></code></pre></div>
 <p>Again, there are lessons:</p>
 <div id="sparse-matrix-vector-formulation" class="section level2">
-<h2><span class="header-section-number">6.1</span> 1. Sparse matrix-vector formulation</h2>
+<h2><span class="header-section-number">6.1</span> Sparse matrix-vector formulation</h2>
 <p>This can again be written as a sparse matrix vector multiply, but now the <code>Z</code> matrix has values that are not just ones.</p>
 <p>If <code>state_idx</code>, <code>states_slopes</code>, and <code>male</code> are defined like this:</p>
 <pre><code>state_idx = { 1, 2, 2, 4, ... }
@@ -1865,11 +1865,11 @@ COL_INDEX = { 1, 2, 2, 4, ... }
 ROW_INDEX = [ 1, 2, 3, 4, ... ]</code></pre>
 </div>
 <div id="new-parameters" class="section level2">
-<h2><span class="header-section-number">6.2</span> 2. New parameters</h2>
+<h2><span class="header-section-number">6.2</span> New parameters</h2>
 <p>Again this term added <code>S = 51</code> parameters that need passed to the likelihood and two hyperparameters that do not need passed in.</p>
 </div>
 <div id="repeat-indices-can-be-re-used" class="section level2">
-<h2><span class="header-section-number">6.3</span> 3. Repeat indices can be re-used</h2>
+<h2><span class="header-section-number">6.3</span> Repeat indices can be re-used</h2>
 <p>Because the slope indexes using the same index as the state, nothing extra needs copied to the accelerator. In fact, this means that the indexing defined by the sparse matrix vector multiply will be less memory efficient than that defined by the for loop because the for loop knows to use the same index for both the slope and the intercept terms whereas the sparse matrix format would have separate indices for these.</p>
 </div>
 </div>
@@ -1907,26 +1907,26 @@ ROW_INDEX = [ 1, 2, 3, 4, ... ]</code></pre>
 <p>So if we think about the linear model in terms of a dense matrix vector product and a sparse matrix vector product, we have Stan code that looks like:</p>
 <pre><code>turned_out ~ binom(M, intercept + X * beta + Z * gamma)</code></pre>
 <div id="key-dimenions-n-k-l" class="section level2">
-<h2><span class="header-section-number">8.1</span> 1. Key dimenions (N, K, L)</h2>
+<h2><span class="header-section-number">8.1</span> Key dimenions (N, K, L)</h2>
 <p>For <code>N</code> responses <code>y</code>, <code>X</code> is dense matrix of size <code>N</code> by <code>K</code> for <code>K</code> covariates, and <code>Z</code> is a sparse matrix of size <code>N</code> by <code>L</code> for <code>L</code> hierarchical terms.</p>
 <p>In this case <code>N</code> is 7851, <code>K</code> is 1, and <code>L</code> is about 233. You can compute <code>L</code> by knowing how many members of each group there are and looking at the hierarchical terms. Here there are 51 states, 4 race categories, 5 education levels, 4 age groups, and 3 marital statuses.</p>
 </div>
 <div id="number-of-parameters" class="section level2">
-<h2><span class="header-section-number">8.2</span> 2. Number of parameters</h2>
+<h2><span class="header-section-number">8.2</span> Number of parameters</h2>
 <p>In this regression, the intercept (scalar), <code>beta</code> (vector of length <code>K</code>), and <code>gamma</code> (vector of length <code>L</code>), would need sent to the accelerator in the forward pass and then the adjoints of these (which are the same size as the variables themselves) sent back from the accelerator in the reverse pass. So that is 235 doubles in and out for the entire likelihood calculation (<code>1 + K + L</code>).</p>
 </div>
 <div id="amount-of-data" class="section level2">
-<h2><span class="header-section-number">8.3</span> 3. Amount of data</h2>
+<h2><span class="header-section-number">8.3</span> Amount of data</h2>
 <p>You have <code>N</code> integer responses and group sizes, you need to index into five groups, and you have one continuous covariate. This means that for static data that only needs shipped once there are <code>2 * N + 5 * N</code> integers and N real values. If we assume 64bit integers and reals, then that is <code>62808 * 8</code> bytes of data.</p>
 </div>
 <div id="l-scales-with-n-k-not-so-much" class="section level2">
-<h2><span class="header-section-number">8.4</span> 4. L scales with N; K not so much</h2>
+<h2><span class="header-section-number">8.4</span> L scales with N; K not so much</h2>
 <p>The G-man philosophy is with big data comes big models, so we expect the number of parameters to grow as the data grows. The philosophy is if you have more data, you know more about your problem, and you should do more to model it.</p>
 <p>Realistically <code>N</code> and <code>L</code> are the parameters that scale. <code>K</code> will not scale in the same way. The logic for this argument is the dense matrix vector terms usually corresponds to population level things. More data adds more complexity to the finer details of the models, the groupings, etc. The population itself will not necessarily change.</p>
 <p>The bleeding edge of Stan models fit now would be <code>N</code> around a million and <code>L</code> in the upper tens of thousands.</p>
 </div>
 <div id="everything-is-memory-bound" class="section level2">
-<h2><span class="header-section-number">8.5</span> 5. Everything is memory bound</h2>
+<h2><span class="header-section-number">8.5</span> Everything is memory bound</h2>
 <p>matrix-vector multiplies are always memory bound be they sparse or dense.</p>
 <p>The only way to make this more efficient (other than getting faster memory) is to switch the matrix-vector multiply into a matrix matrix multiply.</p>
 <p>Any time we do MCMC we need to run multiple chains. Every chain has the same data but different parameters. Assume we are effectively evaluating:</p>
@@ -1939,7 +1939,7 @@ turned_out ~ binomial(M, intercept4 + X * beta4 + Z * gamma4)</code></pre>
 <p>in a combined way and then redistribute the values to their separate chains.</p>
 </div>
 <div id="how-much-time-we-have" class="section level2">
-<h2><span class="header-section-number">8.6</span> 6. How much time we have</h2>
+<h2><span class="header-section-number">8.6</span> How much time we have</h2>
 <p>This will take some very large assumptions, but let us come up with some specific timing numbers to really nail down what needs to happen.</p>
 <p>The default algorithm in Stan is a variant of HMC. If it is operating fairly efficiently, then we probably need somewhere between a thousand and two thousand draws (Stan’s default is 2000) in a few chains (Stan’s default is four). For each HMC draw we probably need somewhere between 100 to 300 gradient evaluations (Stan defaults to 1 to 1023).</p>
 <p>To iterate very quickly on a model, it would be nice to do a full inference in a couple minutes. Ten is fine. Once models take thirty minutes or an hour or ten hours, they start to change workflow in an undesirable way. Obviously there will always be calculations that take hours, but it would be nice if we really moved the need on what is possible in a few minutes.</p>

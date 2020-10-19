@@ -103,7 +103,7 @@ print(fit)
 Alright, great, that model fit. Now before we move on, let's discuss the
 computational aspects of this model.
 
-## 1. Computation
+## Computation
 
 The big work is all done in the model block:
 
@@ -111,7 +111,7 @@ The big work is all done in the model block:
 turned_out ~ binomial_logit(M, intercept + slope * male);
 ```
 
-## 2. Implicit parameters
+## Implicit parameters
 
 There is an `intercept` and `slope` weren't part of the regression version
 of the problem.
@@ -126,7 +126,7 @@ specified, it is assumed to be there.
 
 ```turned_out ~ -1 + male``` is a way of saying do not include the intercept.
 
-## 3. Vectorization
+## Vectorization
 
 This is a vectorized statement. It is equivalent to:
 
@@ -136,7 +136,7 @@ for(n in 1:N) {
 }
 ```
 
-## 4. The model block is a function from $R^P \rightarrow R$
+## The model block is a function from $R^P \rightarrow R$
 
 The model block in Stan represents a function which returns a single
 scalar, the log density of the model. You don't see the log density increments
@@ -159,7 +159,7 @@ A Stan model is a Bayesian log density. This means it is a function mapping
 reverse mode autodiff -- it is most efficient when there is only one output
 but many inputs.
 
-## 5. Link functions
+## Link functions
 
 The distribution in the code is `binomial_logit`, not `binomial`. This is
 because the linear part of the model, `intercept + slope * male`, is
@@ -180,7 +180,7 @@ numerics are more stable for the first so we use that.
 We use `inv_logit` for convenience. Something else, or a low precision
 approximation, would probably be fine.
 
-## 6. Data is static
+## Data is static
 
 The largest pieces of data do not change from model evaluation to model
 evaluation. What changes are the parameters.
@@ -200,7 +200,7 @@ need shipped back from the accelerator.
 
 There are a few modifications to make to this model.
 
-## 1. Matrix-vector multiply formulation
+## Matrix-vector multiply formulation
 
 We can add more covariates like `male`, and for each one there will be an
 additional parameter. Pretend we have another vector `income` which is a
@@ -223,7 +223,7 @@ where `X` is an `N` by `K` design matrix of covariates and `beta` is a length
 `K` vector of parameters. Usually the non-hierarchical/population level terms
 are though of computationally as a matrix-vector multiply for this reason.
 
-## 2. Other likelihoods
+## Other likelihoods
 
 We can change the likelihood to something else. There are a lot of options.
 
@@ -243,14 +243,14 @@ There are many more families supported in `brms`, which is probably a good
 reference on the things we should be concerned about implementing:
 https://cran.r-project.org/web/packages/brms/vignettes/brms_families.html
 
-## 3. Other link functions
+## Other link functions
 
 Changing the likelihood often means changing the link function. The three
 most common inverse link functions are `exp`, `inv_logit`, `probit`, and
 `softmax`. All four terms could be approximated. Some likelihoods and
 parameters do not require a link function at all.
 
-## 4. Regressions on multiple parameters
+## Regressions on multiple parameters
 
 We can have multiple linear models in one likelihood. For instance, we
 might predict both the mean and standard deviation of a normal distribution:
@@ -308,7 +308,7 @@ fit = model$sample(data = list(N = nrow(df_groups),
 Again, there are some new computatinal aspects of this model worth paying
 attention to:
 
-## 1. Sparse matrix-vector multiply formulation
+## Sparse matrix-vector multiply formulation
 
 The operations we added look like a sparse matrix vector multiply. It may be
 unsurprising that this can be formulated as a sparse matrix vector multiply
@@ -372,7 +372,7 @@ The elements of `V` are all ones since the values of the matrix are ones, the
 row index variable is extraneous since effectively there is only one non-zero
 in every row, and `COL_INDEX` is the same as `state_idx`.
 
-## 2. A G-element group adds G parameters
+## A G-element group adds G parameters
 
 For every member of the group, we added one parameter. In this case,
 `S = 51` so that is 51 extra paramaters that need sent to the likelihood at
@@ -384,11 +384,11 @@ Evaluating the prior is not nearly as expensive as the likelihood in GLMs, and
 this is not something that would need accelerated, so these add nothing to the
 complexity for the accelerator.
 
-## 3. Indexes are static data
+## Indexes are static data
 
 `states_idx` only needs copied to the accelerator once.
 
-## 4. For loop variation
+## For loop variation
 
 The for loop version of this is actually pretty readable:
 
@@ -433,7 +433,7 @@ fit = model$sample(data = list(N = nrow(df_groups),
 
 Again, there are lessons:
 
-## 1. Sparse matrix-vector formulation
+## Sparse matrix-vector formulation
 
 This can again be written as a sparse matrix vector multiply, but now the
 `Z` matrix has values that are not just ones.
@@ -464,12 +464,12 @@ COL_INDEX = { 1, 2, 2, 4, ... }
 ROW_INDEX = [ 1, 2, 3, 4, ... ]
 ```
 
-## 2. New parameters
+## New parameters
 
 Again this term added `S = 51` parameters that need passed to the
 likelihood and two hyperparameters that do not need passed in.
 
-## 3. Repeat indices can be re-used
+## Repeat indices can be re-used
 
 Because the slope indexes using the same index as the state, nothing
 extra needs copied to the accelerator. In fact, this means that the indexing
@@ -538,7 +538,7 @@ and a sparse matrix vector product, we have Stan code that looks like:
 turned_out ~ binom(M, intercept + X * beta + Z * gamma)
 ```
 
-## 1. Key dimenions (N, K, L)
+## Key dimenions (N, K, L)
 
 For `N` responses `y`, `X` is dense matrix of size `N` by `K` for `K`
 covariates, and `Z` is a sparse matrix of size `N` by `L` for `L` hierarchical
@@ -549,7 +549,7 @@ by knowing how many members of each group there are and looking at the
 hierarchical terms. Here there are 51 states, 4 race categories,
 5 education levels, 4 age groups, and 3 marital statuses.
 
-## 2. Number of parameters
+## Number of parameters
 
 In this regression, the intercept (scalar), `beta` (vector of length `K`),
 and `gamma` (vector of length `L`),  would need sent to the accelerator in the
@@ -558,7 +558,7 @@ variables themselves) sent back from the accelerator in the reverse pass. So
 that is 235 doubles in and out for the entire likelihood calculation
 (`1 + K + L`).
 
-## 3. Amount of data
+## Amount of data
 
 You have `N` integer responses and group sizes, you need to index into five
 groups, and you have one continuous covariate. This means that for static
@@ -566,7 +566,7 @@ data that only needs shipped once there are `2 * N + 5 * N` integers and N
 real values. If we assume 64bit integers and reals, then that is `62808 * 8`
 bytes of data.
 
-## 4. L scales with N; K not so much
+## L scales with N; K not so much
 
 The G-man philosophy is with big data comes big models, so we expect the
 number of parameters to grow as the data grows. The philosophy is if you have
@@ -582,7 +582,7 @@ will not necessarily change.
 The bleeding edge of Stan models fit now would be `N` around a million and
 `L` in the upper tens of thousands.
 
-## 5. Everything is memory bound
+## Everything is memory bound
 
 matrix-vector multiplies are always memory bound be they sparse or dense.
 
@@ -608,7 +608,7 @@ X * [beta1, beta2, beta3, beta4] + Z * [gamma1, gamma2, gamma3, gamma4]
 
 in a combined way and then redistribute the values to their separate chains.
 
-## 6. How much time we have
+## How much time we have
 
 This will take some very large assumptions, but let us come up with some
 specific timing numbers to really nail down what needs to happen.

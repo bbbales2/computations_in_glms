@@ -1647,7 +1647,7 @@ div.tocify {
 ##   &lt;dbl&gt;      &lt;dbl&gt; &lt;dbl&gt;
 ## 1  -0.5      15697 24662
 ## 2   0.5      12748 20548</code></pre>
-<p>This translates to the Stan code in <a href="somewhere">models/simple.stan</a></p>
+<p>This translates to the Stan code in <a href="https://github.com/bbbales2/computations_in_glms/blob/master/models/simple.stan">models/simple.stan</a></p>
 <div class="sourceCode" id="cb10"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb10-1" data-line-number="1">model =<span class="st"> </span><span class="kw">cmdstan_model</span>(<span class="st">&quot;models/simple.stan&quot;</span>)</a>
 <a class="sourceLine" id="cb10-2" data-line-number="2">fit =<span class="st"> </span>model<span class="op">$</span><span class="kw">sample</span>(<span class="dt">data =</span> <span class="kw">list</span>(<span class="dt">N =</span> <span class="kw">nrow</span>(df_simple),</a>
 <a class="sourceLine" id="cb10-3" data-line-number="3">                               <span class="dt">M =</span> df_simple<span class="op">$</span>M,</a>
@@ -1657,13 +1657,13 @@ div.tocify {
 <div class="sourceCode" id="cb11"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb11-1" data-line-number="1"><span class="kw">print</span>(fit)</a></code></pre></div>
 <pre><code>## Warning: NAs introduced by coercion</code></pre>
 <pre><code>##   variable      mean    median   sd  mad        q5       q95 rhat ess_bulk
-##  lp__      -29805.99 -29805.70 1.01 0.74 -29808.00 -29805.00 1.00     1914
-##  intercept      0.53      0.53 0.01 0.01      0.51      0.54 1.00     3692
-##  slope         -0.07     -0.07 0.02 0.02     -0.10     -0.04 1.00     3220
+##  lp__      -29805.95 -29805.60 1.00 0.59 -29807.90 -29805.00 1.00     1531
+##  intercept      0.53      0.53 0.01 0.01      0.51      0.54 1.00     3153
+##  slope         -0.07     -0.07 0.02 0.02     -0.10     -0.04 1.00     2702
 ##  ess_tail
 ##        NA
-##      2587
-##      2826</code></pre>
+##      2416
+##      2265</code></pre>
 <p>Alright, great, that model fit. Now before we move on, let’s discuss the computational aspects of this model.</p>
 <div id="computation" class="section level2">
 <h2><span class="header-section-number">3.1</span> 1. Computation</h2>
@@ -1751,7 +1751,7 @@ div.tocify {
 <h1><span class="header-section-number">5</span> Hierarchical term 1: <code>(1 | group)</code></h1>
 <p>The term <code>(1 | group)</code> means add to the model an intercept that varies by what group the response belongs to. So we can expand the regression above to say that we expect the turnout to be different in every state:</p>
 <pre><code>turned_out ~ male + (1 | state)</code></pre>
-<p>This corresponds to the Stan model in <a href="somewhere">models/groups.stan</a>.</p>
+<p>This corresponds to the Stan model in <a href="https://github.com/bbbales2/computations_in_glms/blob/master/models/groups.stan">models/groups.stan</a>.</p>
 <p>Similarly to before, we have to do a little work to prepare the regression.</p>
 <div class="sourceCode" id="cb24"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb24-1" data-line-number="1">df_groups =<span class="st"> </span>df <span class="op">%&gt;%</span></a>
 <a class="sourceLine" id="cb24-2" data-line-number="2"><span class="st">  </span><span class="kw">mutate</span>(<span class="dt">state_idx =</span> df<span class="op">$</span>state <span class="op">%&gt;%</span><span class="st"> </span>as.factor <span class="op">%&gt;%</span><span class="st"> </span>as.numeric) <span class="op">%&gt;%</span></a>
@@ -1838,7 +1838,7 @@ ROW_INDEX = [ 1, 2, 3, 4, ... ]</code></pre>
 <p>Now it is time to describe the last variation on hierarchical parameters, <code>(x | group)</code>. As <code>(1 | group)</code> is a group level intercept, <code>(x | group)</code> is a group level slope. In our case, we might be interested in the regression:</p>
 <pre><code>turned_out ~ male + (1 + male | state)</code></pre>
 <p>What this means is we get an extra per-state slope coefficient for the covariate <code>male</code> (which is like the coefficient of <code>male</code> is changing in every state).</p>
-<p>The Stan code for this is given in <a href="somewhere">models/groups_slopes.stan</a>. The data for the last fit will work for this one as well. Running the model looks much the same:</p>
+<p>The Stan code for this is given in <a href="https://github.com/bbbales2/computations_in_glms/blob/master/models/groups_slopes.stan">models/groups_slopes.stan</a>. The data for the last fit will work for this one as well. Running the model looks much the same:</p>
 <div class="sourceCode" id="cb36"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb36-1" data-line-number="1">model =<span class="st"> </span><span class="kw">cmdstan_model</span>(<span class="st">&quot;models/groups_slopes.stan&quot;</span>)</a>
 <a class="sourceLine" id="cb36-2" data-line-number="2">fit =<span class="st"> </span>model<span class="op">$</span><span class="kw">sample</span>(<span class="dt">data =</span> <span class="kw">list</span>(<span class="dt">N =</span> <span class="kw">nrow</span>(df_groups),</a>
 <a class="sourceLine" id="cb36-3" data-line-number="3">                               <span class="dt">M =</span> df_groups<span class="op">$</span>M,</a>

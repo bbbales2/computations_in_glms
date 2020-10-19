@@ -85,7 +85,7 @@ df_simple = df %>%
 print(df_simple)
 ```
 
-This translates to the Stan code in [models/simple.stan](somewhere)
+This translates to the Stan code in [models/simple.stan](https://github.com/bbbales2/computations_in_glms/blob/master/models/simple.stan)
 
 ```{r echo = TRUE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE}
 model = cmdstan_model("models/simple.stan")
@@ -275,7 +275,7 @@ to say that we expect the turnout to be different in every state:
 turned_out ~ male + (1 | state)
 ```
 
-This corresponds to the Stan model in [models/groups.stan](somewhere).
+This corresponds to the Stan model in [models/groups.stan](https://github.com/bbbales2/computations_in_glms/blob/master/models/groups.stan).
 
 Similarly to before, we have to do a little work to prepare the regression.
 
@@ -416,7 +416,7 @@ What this means is we get an extra per-state slope coefficient for the
 covariate `male` (which is like the coefficient of `male` is changing in
 every state).
 
-The Stan code for this is given in [models/groups_slopes.stan](somewhere).
+The Stan code for this is given in [models/groups_slopes.stan](https://github.com/bbbales2/computations_in_glms/blob/master/models/groups_slopes.stan).
 The data for the last fit will work for this one as well. Running the model
 looks much the same:
 

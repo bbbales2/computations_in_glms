@@ -1656,13 +1656,13 @@ div.tocify {
 <div class="sourceCode" id="cb11"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb11-1" data-line-number="1"><span class="kw">print</span>(fit)</a></code></pre></div>
 <pre><code>## Warning: NAs introduced by coercion</code></pre>
 <pre><code>##   variable      mean    median   sd  mad        q5       q95 rhat ess_bulk
-##  lp__      -29805.99 -29805.70 1.03 0.74 -29808.01 -29805.00 1.00     1956
-##  intercept      0.53      0.53 0.01 0.01      0.51      0.54 1.00     3348
-##  slope         -0.07     -0.07 0.02 0.02     -0.10     -0.04 1.00     2808
+##  lp__      -29805.99 -29805.70 1.05 0.74 -29808.20 -29805.00 1.00     1679
+##  intercept      0.53      0.53 0.01 0.01      0.51      0.54 1.00     4009
+##  slope         -0.07     -0.07 0.02 0.02     -0.10     -0.04 1.00     3687
 ##  ess_tail
 ##        NA
-##      2639
-##      2369</code></pre>
+##      2294
+##      2693</code></pre>
 <p>Alright, great, that model fit. Now before we move on, let’s discuss the computational aspects of this model.</p>
 <div id="computation" class="section level2">
 <h2><span class="header-section-number">3.1</span> Computation</h2>
@@ -1904,29 +1904,52 @@ ROW_INDEX = [ 1, 2, 3, 4, ... ]</code></pre>
 <div id="scaling-the-computation" class="section level1">
 <h1><span class="header-section-number">8</span> Scaling the computation</h1>
 <p>To make it easier to think about the problem, let’s talk about problem scales.</p>
-<p>So if we think about the linear model in terms of a dense matrix vector product and a sparse matrix vector product, we have Stan code that looks like:</p>
-<pre><code>turned_out ~ binom(M, intercept + X * beta + Z * gamma)</code></pre>
-<div id="key-dimenions-n-k-l" class="section level2">
-<h2><span class="header-section-number">8.1</span> Key dimenions (N, K, L)</h2>
+<p>If we think about the linear model in terms of a dense matrix vector product and a sparse matrix vector product, we have Stan code that looks like:</p>
+<pre><code>vector[N] = intercept + X * beta + Z * gamma;
+turned_out ~ binomial_logit(M,)</code></pre>
+<div id="key-dimenions-n-and-l" class="section level2">
+<h2><span class="header-section-number">8.1</span> Key dimenions (N and L)</h2>
 <p>For <code>N</code> responses <code>y</code>, <code>X</code> is dense matrix of size <code>N</code> by <code>K</code> for <code>K</code> covariates, and <code>Z</code> is a sparse matrix of size <code>N</code> by <code>L</code> for <code>L</code> hierarchical terms.</p>
 <p>In this case <code>N</code> is 7851, <code>K</code> is 1, and <code>L</code> is about 233. You can compute <code>L</code> by knowing how many members of each group there are and looking at the hierarchical terms. Here there are 51 states, 4 race categories, 5 education levels, 4 age groups, and 3 marital statuses.</p>
-</div>
-<div id="number-of-parameters" class="section level2">
-<h2><span class="header-section-number">8.2</span> Number of parameters</h2>
-<p>In this regression, the intercept (scalar), <code>beta</code> (vector of length <code>K</code>), and <code>gamma</code> (vector of length <code>L</code>), would need sent to the accelerator in the forward pass and then the adjoints of these (which are the same size as the variables themselves) sent back from the accelerator in the reverse pass. So that is 235 doubles in and out for the entire likelihood calculation (<code>1 + K + L</code>).</p>
-</div>
-<div id="amount-of-data" class="section level2">
-<h2><span class="header-section-number">8.3</span> Amount of data</h2>
-<p>You have <code>N</code> integer responses and group sizes, you need to index into five groups, and you have one continuous covariate. This means that for static data that only needs shipped once there are <code>2 * N + 5 * N</code> integers and N real values. If we assume 64bit integers and reals, then that is <code>62808 * 8</code> bytes of data.</p>
-</div>
-<div id="l-scales-with-n-k-not-so-much" class="section level2">
-<h2><span class="header-section-number">8.4</span> L scales with N; K not so much</h2>
-<p>The Stan philosophy is with big data comes big models, so we expect the number of parameters to grow as the data grows. The philosophy is if you have more data, you know more about your problem, and you should do more to model it.</p>
-<p>Realistically <code>N</code> and <code>L</code> are the parameters that scale. <code>K</code> will not scale in the same way. The logic for this argument is the dense matrix vector terms usually corresponds to population level things. More data adds more complexity to the finer details of the models, the groupings, etc. The population itself will not necessarily change.</p>
+<p>The Stan philosophy is with big data comes big models, so we expect the number of parameters to grow as the data grows. This is different from the more traditional asymptotic theory results where we concern ourselves with the behavior of a fixed size model as data grows. If there’s more data, there’s more to model! There is no asymptoting in reality.</p>
+<p>Realistically <code>N</code> and <code>L</code> are the parameters that scale. <code>K</code> will not scale in the same way. The logic for this argument is the dense matrix vector terms corresponds to population level things. More data adds more complexity to the finer details of the models, the groupings, etc. The population itself is probably not changing, and as we collect more data we worry less about modeling overall averages and more about the details.</p>
 <p>The bleeding edge of Stan models fit now would be <code>N</code> around a million and <code>L</code> in the upper tens of thousands.</p>
 </div>
+<div id="sparse-matrix-patterns" class="section level2">
+<h2><span class="header-section-number">8.2</span> Sparse Matrix Patterns</h2>
+<p>The way to understand the patterns in the sparse matrix is to think back to the for loop representation.</p>
+<p>For a term <code>(1 | group)</code> with <code>G</code> groups, the sparse matrix vector is doing the same operations as a for loop that indexes a vector of length <code>G</code>.</p>
+<p>So this loop:</p>
+<pre><code>vector[G] age;
+int age_idx[G];
+vector[N] mu;
+for(n in 1:N) {
+  mu[n] = age[age_idx[n]];
+}</code></pre>
+<p>can be rewritten as a matrix multiply:</p>
+<pre><code>vector[N] mu = Z * age;</code></pre>
+<p>if on the nth row of the matrix <code>Z</code> the only non-zero is a one in the <code>age_idx[n]</code> th column.</p>
+<p>The only change that a term <code>(x | group)</code> has is multiplying everything in the for loop by a scalar or changing the non-zero elements in <code>Z</code> from one to something else.</p>
+<p>So if there are multiply hierarchical terms, for instance <code>(1 | age) + (1 | educ) + (1 | state)</code> then the matrices simply concatenate together horizontally and the parameter vector concatenates together vertically.</p>
+<p>For every hierarchical term, there is one non-zero. Therefore, we would expect the density of the <code>(1 | age)</code> sparse matrix to be <span class="math inline">\(\frac{1}{N_{age}}\)</span> where <span class="math inline">\(N_{age}\)</span> is the number of age groups and similarly the density for <code>(1 | age) + (1 | educ)</code> to be <span class="math inline">\(\frac{1}{2} (\frac{1}{N_{age}} + \frac{1}{N_{educ}})\)</span>. The pattern continues, so for <span class="math inline">\(N_I\)</span> groups of size <span class="math inline">\(N_i\)</span> the matrix density would be <span class="math inline">\(\frac{1}{N_I} \sum_i^{N_I} N_i\)</span>.</p>
+<p>In larger models, we expect the group sizes to get quite large, so the overall density of the sparse matrix will probably be 5% or less (even though in a simple regression with something like <code>(1 | age)</code> it would be 20% with five age groups).</p>
+</div>
+<div id="number-of-parameters" class="section level2">
+<h2><span class="header-section-number">8.3</span> Number of parameters</h2>
+<p>In this regression, the intercept (scalar), <code>beta</code> (vector of length <code>K</code>), and <code>gamma</code> (vector of length <code>L</code>), would need sent to the accelerator in the forward pass and then the adjoints of these (which are the same size as the variables themselves) sent back from the accelerator in the reverse pass. So that is 235 doubles in and out for the entire likelihood calculation (<code>1 + K + L</code>).</p>
+<p>The thing to remember is there will be a column in the sparse matrix for every member of every group added. If you have a state level variable, that is 50 new columns. If you have a yearly index for 1900-2020, that is 120 new columns. If you have a per-year state index over the same time period, that is 50 * 120 new columns.</p>
+</div>
+<div id="amount-of-data" class="section level2">
+<h2><span class="header-section-number">8.4</span> Amount of data</h2>
+<p>You have <code>N</code> integer responses and group sizes, you need to index into five groups, and you have one continuous covariate. This means that for static data that only needs shipped once there are <code>2 * N + 5 * N</code> integers and N real values. If we assume 64bit integers and reals, then that is <code>62808 * 8</code> bytes of data.</p>
+</div>
+<div id="precision" class="section level2">
+<h2><span class="header-section-number">8.5</span> Precision</h2>
+<p>Parameters probably need to stay double precision, but the matrices themselves could be lower precision. In basically all circumstances 32 bit floats would be appropriate for the data, and in a lot of others something even lower precision would work.</p>
+<p>It is unlikely that group sizes will get into the millions even if this project is wildly successful so the indices probably do not need to be 64bit integers.</p>
+</div>
 <div id="everything-is-memory-bound" class="section level2">
-<h2><span class="header-section-number">8.5</span> Everything is memory bound</h2>
+<h2><span class="header-section-number">8.6</span> Everything is memory bound</h2>
 <p>matrix-vector multiplies are always memory bound be they sparse or dense.</p>
 <p>The only way to make this more efficient (other than getting faster memory) is to switch the matrix-vector multiply into a matrix matrix multiply.</p>
 <p>Any time we do MCMC we need to run multiple chains. Every chain has the same data but different parameters. Assume we are effectively evaluating:</p>
@@ -1939,7 +1962,7 @@ turned_out ~ binomial(M, intercept4 + X * beta4 + Z * gamma4)</code></pre>
 <p>in a combined way and then redistribute the values to their separate chains.</p>
 </div>
 <div id="how-much-time-we-have" class="section level2">
-<h2><span class="header-section-number">8.6</span> How much time we have</h2>
+<h2><span class="header-section-number">8.7</span> How much time we have</h2>
 <p>This will take some very large assumptions, but let us come up with some specific timing numbers to really nail down what needs to happen.</p>
 <p>The default algorithm in Stan is a variant of HMC. If it is operating fairly efficiently, then we probably need somewhere between a thousand and two thousand draws (Stan’s default is 2000) in a few chains (Stan’s default is four). For each HMC draw we probably need somewhere between 100 to 300 gradient evaluations (Stan defaults to 1 to 1023).</p>
 <p>To iterate very quickly on a model, it would be nice to do a full inference in a couple minutes. Ten is fine. Once models take thirty minutes or an hour or ten hours, they start to change workflow in an undesirable way. Obviously there will always be calculations that take hours, but it would be nice if we really moved the need on what is possible in a few minutes.</p>

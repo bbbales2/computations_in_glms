@@ -531,14 +531,15 @@ The point is that it is easy to grow this.
 
 To make it easier to think about the problem, let's talk about problem scales.
 
-So if we think about the linear model in terms of a dense matrix vector product
+If we think about the linear model in terms of a dense matrix vector product
 and a sparse matrix vector product, we have Stan code that looks like:
 
 ```
-turned_out ~ binom(M, intercept + X * beta + Z * gamma)
+vector[N] = intercept + X * beta + Z * gamma;
+turned_out ~ binomial_logit(M,)
 ```
 
-## Key dimenions (N, K, L)
+## Key dimenions (N and L)
 
 For `N` responses `y`, `X` is dense matrix of size `N` by `K` for `K`
 covariates, and `Z` is a sparse matrix of size `N` by `L` for `L` hierarchical
@@ -549,6 +550,70 @@ by knowing how many members of each group there are and looking at the
 hierarchical terms. Here there are 51 states, 4 race categories,
 5 education levels, 4 age groups, and 3 marital statuses.
 
+The Stan philosophy is with big data comes big models, so we expect the
+number of parameters to grow as the data grows. This is different from the
+more traditional asymptotic theory results where we concern ourselves with
+the behavior of a fixed size model as data grows. If there's more data,
+there's more to model! There is no asymptoting in reality.
+
+Realistically `N` and `L` are the parameters that scale. `K` will not scale
+in the same way. The logic for this argument is the dense matrix vector terms
+corresponds to population level things. More data adds more complexity
+to the finer details of the models, the groupings, etc. The population itself
+is probably not changing, and as we collect more data we worry less about
+modeling overall averages and more about the details.
+
+The bleeding edge of Stan models fit now would be `N` around a million and
+`L` in the upper tens of thousands.
+
+## Sparse Matrix Patterns
+
+The way to understand the patterns in the sparse matrix is to think
+back to the for loop representation.
+
+For a term `(1 | group)` with `G` groups, the sparse matrix vector is doing
+the same operations as a for loop that indexes a vector of length `G`.
+
+So this loop:
+```
+vector[G] age;
+int age_idx[G];
+vector[N] mu;
+for(n in 1:N) {
+  mu[n] = age[age_idx[n]];
+}
+```
+
+can be rewritten as a matrix multiply:
+```
+vector[N] mu = Z * age;
+```
+
+if on the nth row of the matrix `Z` the only non-zero is a one in the
+`age_idx[n]` th column.
+
+The only change that a term `(x | group)` has is multiplying everything in
+the for loop by a scalar or changing the non-zero elements in `Z` from one
+to something else.
+
+So if there are multiply hierarchical terms, for instance
+`(1 | age) + (1 | educ) + (1 | state)` then the matrices simply concatenate
+together horizontally and the parameter vector concatenates together
+vertically.
+
+For every hierarchical term, there is one non-zero. Therefore, we would
+expect the density of the `(1 | age)` sparse matrix to be $\frac{1}{N_{age}}$
+where $N_{age}$ is the number of age groups and similarly the density for
+`(1 | age) + (1 | educ)` to be
+$\frac{1}{2} (\frac{1}{N_{age}} + \frac{1}{N_{educ}})$. The pattern continues,
+so for $N_I$ groups of size $N_i$ the matrix density would be
+$\frac{1}{N_I} \sum_i^{N_I} N_i$.
+
+In larger models, we expect the group sizes to get quite large, so the
+overall density of the sparse matrix will probably be 5% or less (even though
+in a simple regression with something like `(1 | age)` it would be 20% with
+five age groups).
+
 ## Number of parameters
 
 In this regression, the intercept (scalar), `beta` (vector of length `K`),
@@ -558,6 +623,12 @@ variables themselves) sent back from the accelerator in the reverse pass. So
 that is 235 doubles in and out for the entire likelihood calculation
 (`1 + K + L`).
 
+The thing to remember is there will be a column in the sparse matrix for
+every member of every group added. If you have a state level variable,
+that is 50 new columns. If you have a yearly index for 1900-2020, that
+is 120 new columns. If you have a per-year state index over the same
+time period, that is 50 * 120 new columns.
+
 ## Amount of data
 
 You have `N` integer responses and group sizes, you need to index into five
@@ -566,21 +637,15 @@ data that only needs shipped once there are `2 * N + 5 * N` integers and N
 real values. If we assume 64bit integers and reals, then that is `62808 * 8`
 bytes of data.
 
-## L scales with N; K not so much
+## Precision
 
-The Stan philosophy is with big data comes big models, so we expect the
-number of parameters to grow as the data grows. The philosophy is if you have
-more data, you know more about your problem, and you should do more to model
-it.
+Parameters probably need to stay double precision, but the matrices themselves
+could be lower precision. In basically all circumstances 32 bit floats would be
+appropriate for the data, and in a lot of others something even lower precision
+would work.
 
-Realistically `N` and `L` are the parameters that scale. `K` will not scale
-in the same way. The logic for this argument is the dense matrix vector terms
-usually corresponds to population level things. More data adds more complexity
-to the finer details of the models, the groupings, etc. The population itself
-will not necessarily change.
-
-The bleeding edge of Stan models fit now would be `N` around a million and
-`L` in the upper tens of thousands.
+It is unlikely that group sizes will get into the millions even if this project
+is wildly successful so the indices probably do not need to be 64bit integers.
 
 ## Everything is memory bound
 

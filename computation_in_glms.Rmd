@@ -673,6 +673,28 @@ X * [beta1, beta2, beta3, beta4] + Z * [gamma1, gamma2, gamma3, gamma4]
 
 in a combined way and then redistribute the values to their separate chains.
 
+## Using cache
+
+Because of the form of the log density term (a sum of calculations
+without any interdependencies), it is possible to efficiently do reverse
+mode autodiff with the log density only partly computed.
+
+This means that if there are `N` responses then it is possible
+to do the forward pass for all `N` responses and then do the reverse pass,
+or it is also possible to split this computation in two and do the
+forward and reverse passes for the `1:K` and `(K + 1):N` terms separately.
+
+The amount of data in the sparse and dense computations means that
+it is unlikely for a sizable regression that everything will fit in cache.
+This means that all the autodiff information saved during the forward pass
+will eventually be pushed out of cache to main memory if the entire likelihood
+is computed in one sweep. If instead the likelihood is computed in sections,
+only evaluating so much of the forward calculation that the reverse pass
+information does need written to main memory, then the reverse pass is faster.
+
+On an architecture without a cache this would look a little different, but
+it is probably still something that can be exploited.
+
 ## How much time we have
 
 This will take some very large assumptions, but let us come up with some

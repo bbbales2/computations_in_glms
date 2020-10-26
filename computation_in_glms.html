@@ -1656,13 +1656,13 @@ div.tocify {
 <div class="sourceCode" id="cb11"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb11-1" data-line-number="1"><span class="kw">print</span>(fit)</a></code></pre></div>
 <pre><code>## Warning: NAs introduced by coercion</code></pre>
 <pre><code>##   variable      mean    median   sd  mad        q5       q95 rhat ess_bulk
-##  lp__      -29805.99 -29805.70 1.05 0.74 -29808.20 -29805.00 1.00     1679
-##  intercept      0.53      0.53 0.01 0.01      0.51      0.54 1.00     4009
-##  slope         -0.07     -0.07 0.02 0.02     -0.10     -0.04 1.00     3687
+##  lp__      -29805.93 -29805.60 0.98 0.74 -29807.90 -29805.00 1.00     1995
+##  intercept      0.53      0.53 0.01 0.01      0.51      0.54 1.00     3229
+##  slope         -0.07     -0.07 0.02 0.02     -0.10     -0.04 1.00     2811
 ##  ess_tail
 ##        NA
-##      2294
-##      2693</code></pre>
+##      2297
+##      2272</code></pre>
 <p>Alright, great, that model fit. Now before we move on, let’s discuss the computational aspects of this model.</p>
 <div id="computation" class="section level2">
 <h2><span class="header-section-number">3.1</span> Computation</h2>
@@ -1961,8 +1961,15 @@ turned_out ~ binomial(M, intercept4 + X * beta4 + Z * gamma4)</code></pre>
 <pre><code>X * [beta1, beta2, beta3, beta4] + Z * [gamma1, gamma2, gamma3, gamma4]</code></pre>
 <p>in a combined way and then redistribute the values to their separate chains.</p>
 </div>
+<div id="using-cache" class="section level2">
+<h2><span class="header-section-number">8.7</span> Using cache</h2>
+<p>Because of the form of the log density term (a sum of calculations without any interdependencies), it is possible to efficiently do reverse mode autodiff with the log density only partly computed.</p>
+<p>This means that if there are <code>N</code> responses then it is possible to do the forward pass for all <code>N</code> responses and then do the reverse pass, or it is also possible to split this computation in two and do the forward and reverse passes for the <code>1:K</code> and <code>(K + 1):N</code> terms separately.</p>
+<p>The amount of data in the sparse and dense computations means that it is unlikely for a sizable regression that everything will fit in cache. This means that all the autodiff information saved during the forward pass will eventually be pushed out of cache to main memory if the entire likelihood is computed in one sweep. If instead the likelihood is computed in sections, only evaluating so much of the forward calculation that the reverse pass information does need written to main memory, then the reverse pass is faster.</p>
+<p>On an architecture without a cache this would look a little different, but it is probably still something that can be exploited.</p>
+</div>
 <div id="how-much-time-we-have" class="section level2">
-<h2><span class="header-section-number">8.7</span> How much time we have</h2>
+<h2><span class="header-section-number">8.8</span> How much time we have</h2>
 <p>This will take some very large assumptions, but let us come up with some specific timing numbers to really nail down what needs to happen.</p>
 <p>The default algorithm in Stan is a variant of HMC. If it is operating fairly efficiently, then we probably need somewhere between a thousand and two thousand draws (Stan’s default is 2000) in a few chains (Stan’s default is four). For each HMC draw we probably need somewhere between 100 to 300 gradient evaluations (Stan defaults to 1 to 1023).</p>
 <p>To iterate very quickly on a model, it would be nice to do a full inference in a couple minutes. Ten is fine. Once models take thirty minutes or an hour or ten hours, they start to change workflow in an undesirable way. Obviously there will always be calculations that take hours, but it would be nice if we really moved the need on what is possible in a few minutes.</p>

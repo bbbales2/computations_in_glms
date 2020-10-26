@@ -146,7 +146,7 @@ up to a constant of proportionality to:
 
 ```
 for(n in 1:N) {
-  target += binomial_logit(turned_out[n] | M[n], intercept + slope * male[n]);
+  target += binomial_logit_lpmf(turned_out[n] | M[n], intercept + slope * male[n]);
 }
 ```
 

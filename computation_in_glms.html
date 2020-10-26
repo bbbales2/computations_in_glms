@@ -1656,13 +1656,13 @@ div.tocify {
 <div class="sourceCode" id="cb11"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb11-1" data-line-number="1"><span class="kw">print</span>(fit)</a></code></pre></div>
 <pre><code>## Warning: NAs introduced by coercion</code></pre>
 <pre><code>##   variable      mean    median   sd  mad        q5       q95 rhat ess_bulk
-##  lp__      -29805.93 -29805.60 0.98 0.74 -29807.90 -29805.00 1.00     1995
-##  intercept      0.53      0.53 0.01 0.01      0.51      0.54 1.00     3229
-##  slope         -0.07     -0.07 0.02 0.02     -0.10     -0.04 1.00     2811
+##  lp__      -29806.00 -29805.70 1.02 0.74 -29808.10 -29805.00 1.00     2044
+##  intercept      0.53      0.53 0.01 0.01      0.51      0.54 1.00     3342
+##  slope         -0.07     -0.07 0.02 0.02     -0.10     -0.04 1.00     3421
 ##  ess_tail
 ##        NA
-##      2297
-##      2272</code></pre>
+##      2568
+##      2626</code></pre>
 <p>Alright, great, that model fit. Now before we move on, let’s discuss the computational aspects of this model.</p>
 <div id="computation" class="section level2">
 <h2><span class="header-section-number">3.1</span> Computation</h2>
@@ -1688,7 +1688,7 @@ div.tocify {
 <h2><span class="header-section-number">3.4</span> The model block is a function from <span class="math inline">\(R^P \rightarrow R\)</span></h2>
 <p>The model block in Stan represents a function which returns a single scalar, the log density of the model. You don’t see the log density increments because they are hidden behind <code>~</code> syntactic sugar. The log density is actually called <code>target</code> in Stan, and the previous loop is equivalent up to a constant of proportionality to:</p>
 <pre><code>for(n in 1:N) {
-  target += binomial_logit(turned_out[n] | M[n], intercept + slope * male[n]);
+  target += binomial_logit_lpmf(turned_out[n] | M[n], intercept + slope * male[n]);
 }</code></pre>
 <p>“up to a constant of proportionality” means that for the sake of sampling, they are the same, but in Stan the <code>~</code> operation actually drops some unnecessary calculations.</p>
 <p>A Stan model is a Bayesian log density. This means it is a function mapping <code>P</code> parameters to a scalar output (the log density). This is why we do reverse mode autodiff – it is most efficient when there is only one output but many inputs.</p>

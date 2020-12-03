@@ -83,9 +83,7 @@ model {
   y ~ bernoulli_logit(mu_varmat);
   
   // rstanarm default priors
-  for(k in 1:Kc) {
-    b_varmat[k] ~ normal(0.0, prior_scale_b / sds_X[k]);
-  }
+  b_varmat ~ normal(0.0, prior_scale_b ./ sds_X);
   
   Intercept ~ normal(0.0, prior_scale_Intercept);
   

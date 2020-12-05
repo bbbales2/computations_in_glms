@@ -79,7 +79,7 @@ model {
     + r_eth_varmat[J_eth]
     + r_male_eth_varmat[J_male_eth]
     + r_state_varmat[J_state];
-  
+
   y ~ bernoulli_logit(mu_varmat);
   
   // rstanarm default priors

@@ -71,18 +71,14 @@ transformed parameters {
 
 model {
   // initialize linear predictor term
-  vector[N] mu = Intercept + Xc * b;
-
-  for (n in 1:N) {
-    // add more terms to the linear predictor
-    mu[n] += r_age[J_age[n]] +
-      r_educ[J_educ[n]] +
-      r_educ_age[J_educ_age[n]] +
-      r_educ_eth[J_educ_eth[n]] +
-      r_eth[J_eth[n]] +
-      r_male_eth[J_male_eth[n]] +
-      r_state[J_state[n]];
-  }
+  vector[N] mu = Intercept + Xc * b
+    + r_age[J_age]
+    + r_educ[J_educ]
+    + r_educ_age[J_educ_age]
+    + r_educ_eth[J_educ_eth]
+    + r_eth[J_eth]
+    + r_male_eth[J_male_eth]
+    + r_state[J_state];
 
   y ~ bernoulli_logit(mu);
 
